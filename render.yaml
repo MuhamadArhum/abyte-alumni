@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: frameflow-aluminum-glass
+    runtime: python
+    plan: starter
+    buildCommand: python --version
+    startCommand: python server.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    disk:
+      name: frameflow-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: FRAMEFLOW_DATA_DIR
+        value: /var/data
+      - key: FRAMEFLOW_SECURE_COOKIES
+        value: "true"
+
