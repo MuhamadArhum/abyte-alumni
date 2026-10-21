@@ -131,6 +131,7 @@ class Handler(BaseHTTPRequestHandler):
             with self.db() as c:
                 if p=='/api/auth/setup-status' and self.command=='GET': return self.send_json(200,{'needed':not bool(c.execute('SELECT 1 FROM users LIMIT 1').fetchone())})
                 if p=='/api/auth/setup' and self.command=='POST': return self.setup_admin(c)
+                if p=='/api/auth/signup' and self.command=='POST': return self.signup(c)
                 if p=='/api/auth/login' and self.command=='POST': return self.login(c)
                 if p=='/api/auth/logout' and self.command=='POST': return self.logout(c)
                 user=self.current_user(c)
@@ -175,6 +176,23 @@ class Handler(BaseHTTPRequestHandler):
         token=secrets.token_urlsafe(32); c.execute('INSERT INTO sessions VALUES(?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),row['id'],int(nowt+SESSION_SECONDS),now()))
         user={'id':row['id'],'name':row['name'],'email':row['email'],'role':row['role'],'active':row['active']}; self.audit(c,user,'sign_in','user',user['id'])
         return self.send_json(200,{'user':user},{'Set-Cookie':session_cookie(token, SESSION_SECONDS)})
+    def signup(self,c):
+        addr=self.client_address[0]; nowt=time.time()
+        bucket=self.server.signup_attempts.setdefault(addr,[]); bucket[:]=[t for t in bucket if nowt-t<900]
+        if len(bucket)>=5: return self.send_json(429,{'error':'Too many signup attempts. Try again later.'})
+        bucket.append(nowt)
+        d=self.body(); name=str(d.get('name','')).strip(); email=str(d.get('email','')).strip().lower(); password=str(d.get('password',''))
+        if not name or len(name)>120 or '@' not in email or len(email)>254 or len(password)<12 or len(password)>256:
+            raise ValueError('Enter your name, a valid email, and a password with at least 12 characters')
+        if c.execute('SELECT 1 FROM users LIMIT 1').fetchone() is None:
+            x=uid(); c.execute('INSERT INTO users VALUES(?,?,?,?,?,?,?)',(x,name,email,hash_password(password),'Administrator',1,now()))
+            user={'id':x,'name':name,'email':email,'role':'Administrator','active':1}; self.audit(c,user,'initial_admin_created','user',x)
+            token=secrets.token_urlsafe(32); c.execute('INSERT INTO sessions VALUES(?,?,?,?)',(hashlib.sha256(token.encode()).hexdigest(),x,int(time.time()+SESSION_SECONDS),now()))
+            return self.send_json(201,{'user':user},{'Set-Cookie':session_cookie(token,SESSION_SECONDS)})
+        if not c.execute('SELECT 1 FROM users WHERE email=?',(email,)).fetchone():
+            x=uid(); c.execute('INSERT INTO users VALUES(?,?,?,?,?,?,?)',(x,name,email,hash_password(password),'Sales',0,now()))
+            self.audit(c,None,'signup_requested','user',x,{'role':'Sales'})
+        return self.send_json(202,{'ok':True,'message':'Signup request received. An administrator must activate your account before you can sign in.'})
     def setup_admin(self,c):
         if c.execute('SELECT 1 FROM users LIMIT 1').fetchone(): return self.send_json(409,{'error':'Administrator setup has already been completed'})
         d=self.body();name=str(d.get('name','')).strip();email=str(d.get('email','')).strip().lower();password=str(d.get('password',''))
@@ -342,7 +360,7 @@ def main():
     parser=argparse.ArgumentParser(description='Run FrameFlow quotation management system')
     parser.add_argument('--host',default=os.environ.get('HOST', '127.0.0.1'));parser.add_argument('--port',type=int,default=int(os.environ.get('PORT', '8765')))
     args=parser.parse_args();init_db()
-    server=ThreadingHTTPServer((args.host,args.port),Handler);server.login_attempts={}
+    server=ThreadingHTTPServer((args.host,args.port),Handler);server.login_attempts={};server.signup_attempts={}
     print(f'FrameFlow running at http://{args.host}:{args.port}');print(f'Database: {DB_PATH}');print('Press Ctrl+C to stop.')
     try:server.serve_forever()
     except KeyboardInterrupt:print('\nStopping FrameFlow...')
