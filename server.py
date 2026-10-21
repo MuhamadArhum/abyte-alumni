@@ -235,7 +235,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(item,dict): raise ValueError('Each catalog item must be an object')
             code=str(item.get('code','')).strip(); name=str(item.get('name','')).strip()
             category=str(item.get('category','Other')).strip() or 'Other'; unit=str(item.get('unit','')).strip()
-            if not code or len(code)>40 or not name or len(name)>120 or len(category)>80 or not unit or len(unit)>30:
+            if not code or len(code)>100 or not name or len(name)>120 or len(category)>80 or not unit or len(unit)>30:
                 raise ValueError('Each product needs a code, name, category, and unit within supported lengths')
             key=code.casefold()
             if key in seen: raise ValueError(f'Duplicate product code in import: {code}')
