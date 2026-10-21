@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#103c32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="FrameFlow">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png">
   <title>FrameFlow | Aluminum &amp; Glass</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -17,6 +24,8 @@
       <nav aria-label="Main navigation">
         <button class="nav active" data-page="dashboard"><i>▦</i><span>Overview</span></button>
         <button class="nav" data-page="quotes"><i>▤</i><span>Quotations</span><span id="quoteCount" class="badge">0</span></button>
+        <button class="nav" data-page="sales"><i>↗</i><span>Sales</span><span id="saleCount" class="badge">0</span></button>
+        <button class="nav" data-page="reports"><i>▥</i><span>Reports</span></button>
         <button class="nav" data-page="clients"><i>♙</i><span>Clients</span></button>
         <button class="nav" data-page="catalog"><i>▧</i><span>Catalog &amp; rates</span></button>
         <button class="nav admin-only" data-page="users"><i>♧</i><span>Users &amp; audit</span></button>
@@ -31,6 +40,7 @@
       <header>
         <div class="crumb"><span class="crumb-label">WORKSPACE</span><span class="crumb-divider">/</span><b id="crumb">Overview</b></div>
         <div class="head-actions">
+          <button class="btn install-app" id="installApp" data-action="install-app">Install app</button>
           <button class="btn primary header-new" data-action="new-quote">＋ <span>New quotation</span></button>
           <div class="user"><span class="avatar purple">FF</span><div><b id="headerUser">Signed in</b><small id="headerRole">Administrator</small></div></div>
           <button class="btn signout" data-action="logout" aria-label="Sign out">↗ <span>Sign out</span></button>

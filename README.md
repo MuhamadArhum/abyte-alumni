@@ -12,6 +12,13 @@ A real, locally hosted, single-business web application with a Python HTTP serve
 
 Keep the terminal open while using the system. Press Ctrl+C in that window to stop it. Database file: `data/frameflow.sqlite3`. You can choose another data directory with `FRAMEFLOW_DATA_DIR`.
 
+## Mobile PWA installation
+
+- Deploy FrameFlow to an HTTPS host (for example, its existing Render URL), then open that URL on the phone. A local `127.0.0.1` address only points back to the phone itself.
+- In Chrome or Edge on Android, tap **Install app** in the header or use the browser menu and choose **Install app** / **Add to Home screen**.
+- On iPhone or iPad, open the HTTPS URL in Safari, tap **Share**, then **Add to Home Screen**.
+- The service worker keeps the app shell available for launch while offline. Sign-in, quotations, sales, and reports need the server and an internet connection; authenticated business data is not saved in the offline cache.
+
 ## Working features
 
 - Server-managed login sessions; passwords are PBKDF2-HMAC-SHA256 hashes, never stored in plaintext.

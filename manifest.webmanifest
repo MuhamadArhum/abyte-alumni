@@ -1,0 +1,17 @@
+{
+  "id": "/",
+  "name": "FrameFlow | Aluminum & Glass",
+  "short_name": "FrameFlow",
+  "description": "Quotations, sales and client records for aluminum and glass workshops.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f8fa",
+  "theme_color": "#103c32",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,23 +1,367 @@
-const state={user:null,clients:[],products:[],quotes:[],settings:{},users:[],audit:[],page:'dashboard',search:'',filter:'All'};const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),money=n=>`${esc(state.settings.currency||'PKR')} ${Number(n||0).toLocaleString('en-PK',{minimumFractionDigits:2,maximumFractionDigits:2})}`;function toast(t){let e=$('#toast');e.textContent=t;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),2700)}async function api(url,options={}){let r=await fetch(url,{credentials:'same-origin',...options,headers:{'Content-Type':'application/json',...(options.headers||{})}}),d;try{d=await r.json()}catch{d={error:'Invalid server response'}}if(!r.ok)throw Error(d.error||`Request failed (${r.status})`);return d}
-async function loadAll(){let names=['clients','products','quotes','settings'],requests=await Promise.allSettled([api('/api/clients'),api('/api/products'),api('/api/quotations'),api('/api/settings')]),issues=[];for(let i=0;i<names.length;i++){let r=requests[i];state[names[i]]=r.status==='fulfilled'?r.value:(names[i]==='settings'?{}:[]);if(r.status==='rejected')issues.push(`${names[i]}: ${r.reason.message}`)}if(state.user.role==='Administrator'){for(let [key,url] of [['users','/api/users'],['audit','/api/audit']])try{state[key]=await api(url)}catch(e){state[key]=[];issues.push(`${key}: ${e.message}`)}}$('#companyLabel').textContent=state.settings.company||'Business workspace';$('#quoteCount').textContent=state.quotes.length;$('#userLabel').textContent=state.user.name;$('#roleLabel').textContent=state.user.role;$('#headerUser').textContent=state.user.name;$('#headerRole').textContent=state.user.role;document.querySelectorAll('.admin-only').forEach(x=>x.hidden=state.user.role!=='Administrator');document.querySelectorAll('.header-new').forEach(x=>x.hidden=state.user.role==='Viewer');render();if(issues.length)$('#page').insertAdjacentHTML('afterbegin',`<div class="note" style="margin-bottom:16px"><b>Some records did not load.</b> ${esc(issues.join(' Â· '))} <button class="btn mini" onclick="loadAll()">Retry</button></div>`)}
-let setupNeeded=false,authView='login';async function boot(){try{let d=await api('/api/auth/me');state.user=d.user;$('#shell').hidden=false;await loadAll()}catch{try{setupNeeded=(await api('/api/auth/setup-status')).needed;authView=setupNeeded?'signup':'login';showLogin()}catch{setupNeeded=false;authView='login';showLogin('Cannot reach the FrameFlow server. Start Restart-FrameFlow.cmd and refresh this page.')}}}
-function showLogin(error=''){const signup=authView==='signup';$('#shell').hidden=true;$('#login').hidden=false;$('#login').innerHTML=`<form class="login-card" id="authForm"><div class="logo">F</div><div class="eyebrow" style="margin-top:17px">FRAMEFLOW Â· QUOTATION STUDIO</div><h1>${setupNeeded?'Set up your workspace':signup?'Create your account':'Sign in'}</h1><p class="subtitle">${setupNeeded?'Create the first administrator account.':signup?'Request access to your business workspace.':'Use your business account.'}</p>${error?`<div class="${error.startsWith('Signup received.')?'login-success':'login-error'}" role="status">${esc(error)}</div>`:''}${signup?`<div class="field"><label>Your name</label><input class="input" name="name" autocomplete="name" maxlength="120" required></div>`:''}<div class="field"><label>Email</label><input class="input" name="email" type="email" autocomplete="username" required></div><div class="field"><label>Password ${signup?'(12+ characters)':''}</label><input class="input" name="password" type="password" minlength="${signup?12:1}" maxlength="256" autocomplete="${signup?'new-password':'current-password'}" required></div>${signup?`<div class="field"><label>Confirm password</label><input class="input" name="confirm" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></div>`:''}<button class="btn primary" style="width:100%;margin-top:18px">${setupNeeded?'Create administrator':signup?'Request account':'Sign in'}</button><p class="login-foot">${setupNeeded?'Your first account is the workspace administrator.':signup?'New accounts need administrator approval before sign-in.':''}</p>${!setupNeeded?`<button class="auth-switch" type="button" id="authSwitch">${signup?'Already have an account? Sign in':'Need an account? Sign up'}</button>`:''}</form>`;$('#authForm').onsubmit=signup?createAccount:login;$('#authSwitch')?.addEventListener('click',()=>{authView=signup?'login':'signup';showLogin()})}
-async function login(e){e.preventDefault();let f=new FormData(e.target),d;try{d=await api('/api/auth/login',{method:'POST',body:JSON.stringify({email:f.get('email'),password:f.get('password')})})}catch(err){return showLogin(err.message)}state.user=d.user;$('#login').hidden=true;$('#shell').hidden=false;await loadAll()}
-async function createAccount(e){e.preventDefault();let f=new FormData(e.target);if(f.get('password')!==f.get('confirm'))return showLogin('Passwords do not match');let d;try{d=await api(setupNeeded?'/api/auth/setup':'/api/auth/signup',{method:'POST',body:JSON.stringify({name:f.get('name'),email:f.get('email'),password:f.get('password')})})}catch(err){return showLogin(err.message)}if(setupNeeded){state.user=d.user;setupNeeded=false;$('#login').hidden=true;$('#shell').hidden=false;await loadAll();return}showLogin('Signup received. An administrator must approve the account before you can sign in.')}
-function nav(p){state.page=p;state.search='';state.filter='All';document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.page===p));$('#crumb').textContent=({dashboard:'Overview',quotes:'Quotations',clients:'Clients',catalog:'Catalog & rates',users:'Users & audit',settings:'Settings'})[p];render()}document.querySelectorAll('.nav').forEach(x=>x.onclick=()=>nav(x.dataset.page));function title(k,t,s,b=''){return `<div class="title-row"><div><div class="eyebrow">${k}</div><h1>${t}</h1><div class="subtitle">${s}</div></div>${b}</div>`}function button(a,label,cls=''){return `<button class="btn ${cls}" data-action="${a}">${label}</button>`}function status(s){return `<span class="status ${esc(s)}">${esc(s)}</span>`}function qrows(arr){return arr.length?arr.map(q=>`<tr><td><div class="primary-cell">${esc(q.number)}</div><div class="secondary">${esc(q.created_at?.slice(0,10)||'')}</div></td><td>${esc(q.client_name)}</td><td>${q.items.length} item${q.items.length===1?'':'s'}</td><td>${money(q.total)}</td><td>${status(q.status)}</td><td><div class="small-actions"><button class="btn mini" data-action="view-quote" data-id="${q.id}">View</button><button class="btn mini" data-action="pdf" data-id="${q.id}">Print</button></div></td></tr>`).join(''):`<tr><td colspan="6"><div class="empty">No quotations yet</div></td></tr>`}function render(){let p=$('#page');if(state.page==='dashboard')p.innerHTML=dashboard();if(state.page==='quotes')p.innerHTML=quotesPage();if(state.page==='clients')p.innerHTML=clientsPage();if(state.page==='catalog')p.innerHTML=catalogPage();if(state.page==='settings')p.innerHTML=settingsPage();if(state.page==='users')p.innerHTML=usersPage()}function dashboard(){let qs=[...state.quotes].sort((a,b)=>b.created_at.localeCompare(a.created_at)),approved=qs.filter(x=>x.status==='Approved').reduce((s,x)=>s+Number(x.total),0),drafts=qs.filter(x=>x.status==='Draft').length,issued=qs.filter(x=>x.status==='Issued').length,first=(state.user.name||'there').trim().split(/\s+/)[0];return `<div class="dashboard-hero"><div><div class="eyebrow">YOUR WORKSPACE Â· ${new Date().toLocaleDateString('en',{weekday:'long',month:'long',day:'numeric'}).toUpperCase()}</div><h1>Welcome back, ${esc(first)}</h1><p class="subtitle">Hereâ€™s whatâ€™s happening with your quotations today.</p><div class="shortcut-hints"><span><kbd>Alt</kbd> <b>+</b> <kbd>N</kbd> New quotation</span><span><kbd>/</kbd> Search this page</span><span><kbd>Esc</kbd> Close dialog</span></div></div><div class="hero-actions">${state.user.role==='Viewer'?'':button('new-quote','ï¼‹ &nbsp;Create quotation','primary')}<button class="btn hero-secondary" data-goto="clients">View clients <span>â†’</span></button></div></div><div class="stat-grid"><div class="card stat"><div class="stat-top"><span>Total quotations</span><span class="stat-icon">â–¤</span></div><div class="stat-value">${qs.length}</div><div class="stat-foot">Across all statuses</div></div><div class="card stat"><div class="stat-top"><span>Drafts to finish</span><span class="stat-icon amber">âœ</span></div><div class="stat-value">${drafts}</div><div class="stat-foot">Ready for review</div></div><div class="card stat"><div class="stat-top"><span>Awaiting response</span><span class="stat-icon violet">â—·</span></div><div class="stat-value">${issued}</div><div class="stat-foot">Sent to your clients</div></div><div class="card stat"><div class="stat-top"><span>Approved value</span><span class="stat-icon mint">â†—</span></div><div class="stat-value money-stat">${money(approved)}</div><div class="stat-foot">${qs.filter(x=>x.status==='Approved').length} approved quotations</div></div></div><div class="dashboard-grid"><div class="card section-card recent-card"><div class="section-head"><div><div class="eyebrow">SALES ACTIVITY</div><h2>Recent quotations</h2><p>Your latest saved customer offers</p></div><a class="link" data-goto="quotes">View all <span>â†’</span></a></div><div class="table-wrap"><table><thead><tr><th>Quote</th><th>Client</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>${qrows(qs.slice(0,6))}</tbody></table></div></div><div class="dashboard-rail"><div class="card section-card quick-card"><div class="eyebrow">SHORTCUTS</div><h2>Quick actions</h2><button class="quick-action" data-action="new-quote"><span class="quick-icon">ï¼‹</span><span><b>Start a quotation</b><small>Prepare a new customer offer</small></span><span class="quick-arrow">â†’</span></button><button class="quick-action" data-goto="clients"><span class="quick-icon people">â™™</span><span><b>Manage clients</b><small>${state.clients.length} contacts in your workspace</small></span><span class="quick-arrow">â†’</span></button><button class="quick-action" data-goto="catalog"><span class="quick-icon catalog">â–§</span><span><b>Check product rates</b><small>${state.products.length.toLocaleString()} active catalog items</small></span><span class="quick-arrow">â†’</span></button></div><div class="workspace-tip"><div class="tip-mark">âœ¦</div><div><b>Rates stay consistent</b><p>Issued quotations keep their saved prices, even when your catalog rates change.</p></div></div></div></div>`}
-function toolbar(ph,filters=false){return `<div class="toolbar"><input id="search" class="input search" placeholder="âŒ•  ${ph}" value="${esc(state.search)}">${filters?`<select id="statusFilter" class="input select">${['All','Draft','Issued','Approved','Rejected','Expired'].map(x=>`<option ${state.filter===x?'selected':''}>${x}</option>`).join('')}</select>`:''}<span style="flex:1"></span>${state.user.role==='Administrator'?button('export','â†“ Export CSV'):''}</div>`}function quotesPage(){let qs=state.quotes.filter(q=>(state.filter==='All'||q.status===state.filter)&&(!state.search||(q.number+q.client_name).toLowerCase().includes(state.search.toLowerCase())));return `${title('SALES WORKSPACE','Quotations','Draft, issue, track responses, and preserve issued prices.',state.user.role==='Viewer'?'':button('new-quote','ï¼‹ &nbsp;New quotation','primary'))}<div class="card page-card">${toolbar('Search quote or client',true)}<div class="table-pad"><table><thead><tr><th>Quote</th><th>Client</th><th>Items</th><th>Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>${qrows(qs)}</tbody></table></div></div>`}function clientRows(cs){return cs.length?cs.map(c=>`<tr><td><div class="primary-cell">${esc(c.name)}</div><div class="secondary">${esc(c.email||'No email')}</div></td><td>${esc(c.phone)}</td><td>${esc(c.address||'â€”')}</td><td>${state.quotes.filter(q=>q.client_id===c.id).length}</td><td><button class="btn mini" data-action="edit-client" data-id="${c.id}">Edit</button> <button class="btn mini danger" data-action="delete-client" data-id="${c.id}">Archive</button></td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No clients found</div></td></tr>`}function clientsPage(){let cs=state.clients.filter(c=>(c.name+c.phone+c.email).toLowerCase().includes(state.search.toLowerCase()));return `${title('CUSTOMER DIRECTORY','Clients','Manage contact details and view quotation history.',state.user.role==='Viewer'?'':button('new-client','ï¼‹ &nbsp;Add client','primary'))}<div class="card page-card">${toolbar('Search name, phone, or email')}<div class="table-pad"><table><thead><tr><th>Client</th><th>Phone</th><th>Address</th><th>Quotes</th><th>Actions</th></tr></thead><tbody>${clientRows(cs)}</tbody></table></div></div>`}function productRows(ps){return ps.length?ps.map(p=>`<tr><td><div class="primary-cell">${esc(p.name)}</div><div class="secondary">${esc(p.code)}</div></td><td>${esc(p.category)}</td><td>${esc(p.unit)}</td><td>${money(p.rate)}</td><td>${state.user.role==='Administrator'?`<button class="btn mini" data-action="edit-product" data-id="${p.id}">Edit</button> <button class="btn mini danger" data-action="delete-product" data-id="${p.id}">Archive</button>`:''}</td></tr>`).join(''):`<tr><td colspan="5"><div class="empty">No catalog products</div></td></tr>`}function catalogPage(){let ps=state.products.filter(p=>(p.name+p.code+p.category).toLowerCase().includes(state.search.toLowerCase()));return `${title('PRICE LIST','Catalog & rates','Manage products and current unit selling rates.',state.user.role==='Administrator'?`${button('import-products','â†‘ &nbsp;Import PDF catalog')}${button('new-product','ï¼‹ &nbsp;Add product','primary')}`:'')}<div class="note" style="margin-bottom:15px">Issued quotes preserve their saved rates. Automatic dimensional formulas await workshop approval.</div><div class="card page-card">${toolbar('Search product or code')}<div class="table-pad"><table><thead><tr><th>Product</th><th>Category</th><th>Unit</th><th>Rate</th><th>Actions</th></tr></thead><tbody>${productRows(ps)}</tbody></table></div></div>`}function settingsPage(){return `${title('WORKSPACE','Company settings','Configure business identity and quotation defaults.',button('backup','â†“ Download backup'))}<div class="card setting-card"><h2>Company details</h2><p>Displayed on printable customer quotations.</p><div class="form-grid"><div class="field"><label>Company name</label><input class="input" id="setCompany" value="${esc(state.settings.company)}"></div><div class="field"><label>Phone</label><input class="input" id="setPhone" value="${esc(state.settings.phone)}"></div><div class="field"><label>Currency</label><input class="input" id="setCurrency" value="${esc(state.settings.currency)}"></div><div class="field"><label>Default terms</label><input class="input" id="setTerms" value="${esc(state.settings.terms)}"></div></div><button class="btn primary" style="margin-top:14px" data-action="save-settings">Save settings</button></div><div class="card setting-card"><h2>Data storage</h2><p>Business records are stored in the SQLite database on the computer running the server. Download and store regular backups securely.</p><div class="note">Run the application over HTTPS with a managed database before remote internet access.</div></div>`}function usersPage(){return `${title('ACCESS CONTROL','Users & audit','Manage user accounts and review sensitive events.',button('new-user','ï¼‹ &nbsp;Add user','primary'))}<div class="card section-card" style="margin-bottom:15px"><div class="section-head"><div><h2>User accounts</h2><p>Server-enforced role access</p></div></div><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th></th></tr></thead><tbody>${state.users.map(u=>`<tr><td class="primary-cell">${esc(u.name)}</td><td>${esc(u.email)}</td><td><select class="input" id="role-${u.id}">${['Administrator','Estimator','Sales','Viewer'].map(r=>`<option ${u.role===r?'selected':''}>${r}</option>`).join('')}</select></td><td><select class="input" id="active-${u.id}"><option value="true" ${u.active?'selected':''}>Active</option><option value="false" ${!u.active?'selected':''}>Disabled</option></select></td><td><button class="btn mini" data-action="save-user" data-id="${u.id}">Save</button></td></tr>`).join('')}</tbody></table></div><div class="card section-card"><div class="section-head"><div><h2>Recent audit events</h2></div></div><table><thead><tr><th>When</th><th>User</th><th>Action</th><th>Record</th></tr></thead><tbody>${state.audit.map(a=>`<tr><td>${esc(a.created_at)}</td><td>${esc(a.actor||'â€”')}</td><td>${esc(a.action)}</td><td>${esc(a.entity_type)} Â· ${esc(a.entity_id.slice(0,8))}</td></tr>`).join('')}</tbody></table></div>`}
-function modal(t,content,foot=''){ $('#modalRoot').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><div class="modal-title">${t}</div><button class="x" onclick="closeModal()">Ã—</button></div><div class="modal-body">${content}</div>${foot?`<div class="modal-foot">${foot}</div>`:''}</div></div>`}function closeModal(){$('#modalRoot').innerHTML=''}const cancel='<button class="btn" onclick="closeModal()">Cancel</button>';
-function clientModal(c){modal(c?'Edit client':'Add client',`<div class="form-grid"><div class="field" style="grid-column:1/-1"><label>Name *</label><input class="input" id="fName" value="${esc(c?.name||'')}"></div><div class="field"><label>Phone *</label><input class="input" id="fPhone" value="${esc(c?.phone||'')}"></div><div class="field"><label>Email</label><input class="input" id="fEmail" value="${esc(c?.email||'')}"></div><div class="field" style="grid-column:1/-1"><label>Address</label><input class="input" id="fAddress" value="${esc(c?.address||'')}"></div><div class="field" style="grid-column:1/-1"><label>Notes</label><textarea id="fNotes">${esc(c?.notes||'')}</textarea></div></div>`,`${cancel}<button class="btn primary" onclick="saveClient('${c?.id||''}')">Save client</button>`)}async function saveClient(cid){let d={name:$('#fName').value.trim(),phone:$('#fPhone').value.trim(),email:$('#fEmail').value.trim(),address:$('#fAddress').value.trim(),notes:$('#fNotes').value.trim()};try{await api('/api/clients',{method:cid?'PATCH':'POST',body:JSON.stringify(cid?{...d,id:cid}:d)});closeModal();await loadAll();toast('Client saved')}catch(e){toast(e.message)}}
-function productModal(p){let categories=[...new Set(['Glass','Mirror','Aluminum profile','Accessories','Services','Other',...state.products.map(x=>x.category)].filter(Boolean))].sort((a,b)=>a.localeCompare(b));modal(p?'Edit product and rate':'Add catalog product',`<form id="productForm" class="product-form" novalidate><div class="product-intro">Add the item details and current selling rate. These details will be available when preparing quotations.</div><div class="form-grid product-grid"><div class="field"><label for="pName">Product name <span>*</span></label><input class="input" id="pName" required maxlength="120" autocomplete="off" placeholder="e.g. Clear tempered glass" value="${esc(p?.name||'')}"><small>Use a clear name your team can recognize.</small></div><div class="field"><label for="pCode">Product code <span>*</span></label><input class="input" id="pCode" required maxlength="100" autocomplete="off" placeholder="e.g. GL-CLR-10" value="${esc(p?.code||'')}"><small id="pCodeHint">Unique reference used to find this product.</small></div><div class="field"><label for="pCategory">Category</label><input class="input" id="pCategory" list="pCategoryOptions" maxlength="80" autocomplete="off" placeholder="Choose or type a category" value="${esc(p?.category||'Other')}"><datalist id="pCategoryOptions">${categories.map(x=>`<option value="${esc(x)}">`).join('')}</datalist><small>Choose an existing category or type a new one.</small></div><div class="field"><label for="pUnit">Selling unit <span>*</span></label><input class="input" id="pUnit" required maxlength="30" list="pUnitOptions" autocomplete="off" placeholder="e.g. sq ft, ft, piece, set" value="${esc(p?.unit||'')}"><datalist id="pUnitOptions"><option value="sq ft"><option value="ft"><option value="piece"><option value="set"><option value="kg"></datalist><small>Quotation quantities will use this unit.</small></div><div class="field product-rate"><label for="pRate">Selling rate (${esc(state.settings.currency||'PKR')}) <span>*</span></label><div class="rate-input"><span>${esc(state.settings.currency||'PKR')}</span><input class="input" id="pRate" type="number" required min="0" step="0.01" inputmode="decimal" placeholder="0.00" value="${esc(p?.rate??'')}"></div><small>Current rate per selected unit.</small></div></div></form>`,`${cancel}<button class="btn primary" id="saveProductBtn" type="button">${p?'Save changes':'Add product'}</button>`);let form=$('#productForm'),name=$('#pName'),code=$('#pCode'),codeHint=$('#pCodeHint'),wasEdited=!!p;code.addEventListener('input',()=>{wasEdited=true});name.addEventListener('input',()=>{if(!wasEdited){let v=name.value.trim().toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,40);code.value=v;codeHint.textContent=v?'Suggested code â€” you can edit it.':'Unique reference used to find this product.'}});$('#saveProductBtn').onclick=()=>form.requestSubmit();form.onsubmit=e=>{e.preventDefault();saveProduct(p?.id||'')};name.focus()}async function saveProduct(pid){let form=$('#productForm');if(!form.reportValidity())return;let d={name:$('#pName').value.trim(),code:$('#pCode').value.trim(),category:$('#pCategory').value.trim()||'Other',unit:$('#pUnit').value.trim(),rate:$('#pRate').value};let btn=$('#saveProductBtn');btn.disabled=true;btn.textContent='Savingâ€¦';try{await api('/api/products',{method:pid?'PATCH':'POST',body:JSON.stringify(pid?{...d,id:pid}:d)});closeModal();await loadAll();toast('Product and rate saved')}catch(e){btn.disabled=false;btn.textContent=pid?'Save changes':'Add product';toast(e.message)}}
-async function importProducts(){modal('Import PDF catalog',`<p class="subtitle">Choose the products JSON prepared from PL 03-04-26.pdf. Existing product codes will be skipped; no existing item or quotation will be changed.</p><div class="field" style="margin-top:16px"><label for="importFile">Catalog JSON file</label><input class="input" id="importFile" type="file" accept=".json,application/json" style="width:100%;height:auto;padding:10px"></div>`,`${cancel}<button class="btn primary" id="uploadCatalog">Import new products</button>`);$('#uploadCatalog').onclick=async()=>{let file=$('#importFile').files?.[0];if(!file)return toast('Choose the catalog JSON file first');let btn=$('#uploadCatalog');btn.disabled=true;btn.textContent='Importingâ€¦';try{let payload=JSON.parse(await file.text());if(!Array.isArray(payload.products))throw Error('This file does not contain a products list');let result=await api('/api/products/import',{method:'POST',body:JSON.stringify(payload)});closeModal();await loadAll();toast(`Catalog imported: ${result.added} added, ${result.skipped} already existed`)}catch(e){btn.disabled=false;btn.textContent='Import new products';toast(e.message)}}}
-function itemRow(it={}){let p=state.products.find(x=>x.id===it.product_id);return `<div class="item-row"><div class="qi-product-info"><div class="primary-cell">${esc(p?.name||it.product_name||'Product')}</div><div class="secondary">${esc(p?.code||it.code||'')} Â· ${esc(p?.unit||it.unit||'')}</div><input class="qi-product" type="hidden" value="${esc(it.product_id||'')}"></div><label class="qi-field qi-qty-field"><span>Quantity</span><input class="input qi-qty" aria-label="Quantity" type="number" min="0.001" step="0.001" value="${esc(it.qty||1)}" placeholder="Qty"></label><label class="qi-field qi-rate-field"><span>Rate</span><input class="input qi-rate" aria-label="Rate" type="number" min="0" step="0.01" value="${esc(it.rate??p?.rate??'')}" placeholder="Rate"></label><label class="qi-field qi-desc-field"><span>Specifications / dimensions</span><input class="input qi-desc" aria-label="Specifications or dimensions" value="${esc(it.description||'')}" placeholder="Specifications / dimensions"></label><button type="button" class="btn mini danger qi-remove" aria-label="Remove item">Ã—</button></div>`}function nextNumber(){return 'Assigned on save'}function quoteModal(q){if(!state.clients.length){closeModal();clientModal();return toast('Add a client first')}if(!state.products.length)return toast('Add products and rates first');let cOpts=state.clients.map(c=>`<option value="${c.id}" ${q?.client_id===c.id?'selected':''}>${esc(c.name)}</option>`).join(''),lines=q?.items||[],productOpts=state.products.map(p=>`<option value="${esc(p.name)} Â· ${esc(p.code)}" label="${esc(p.category)} Â· ${esc(p.unit)} Â· ${money(p.rate)}"></option>`).join(''),body=`<div class="form-grid"><div class="field"><label>Client *</label><select class="input" id="qClient"><option value="">Select a client</option>${cOpts}</select></div><div class="field"><label>Quote number</label><input class="input" value="${esc(q?.number||nextNumber())}" disabled></div><div class="field"><label>Valid until</label><input class="input" type="date" id="qValid" value="${esc(q?.valid_until||'')}"></div><div class="field"><label>Fixed discount (${esc(state.settings.currency)})</label><input class="input" type="number" id="qDiscount" min="0" step="0.01" value="${esc(q?.discount||0)}"></div></div><div class="quote-items-head"><b>Items</b></div><div class="field quote-product-picker"><label for="qAddProduct">Product</label><input class="input" id="qAddProduct" list="qProductOptions" autocomplete="off" aria-label="Search product by name or code" placeholder="Type product name or code to searchâ€¦"><datalist id="qProductOptions">${productOpts}</datalist></div><div class="item-row item-header"><span>PRODUCT</span><span>QTY</span><span>RATE</span><span>SPECIFICATIONS</span><span></span></div><div id="items">${lines.length?lines.map(itemRow).join(''):`<div class="empty quote-empty" id="emptyItems">Choose a product above to start your item list.</div>`}</div><div class="total-box"><div class="total-line"><span>Subtotal</span><b id="qSubtotal">${money(q?.subtotal||0)}</b></div><div class="total-line"><span>Discount</span><b id="qDiscShow">${money(q?.discount||0)}</b></div><div class="total-line final"><span>Total</span><b id="qTotal">${money(q?.total||0)}</b></div></div><div class="field" style="margin-top:14px"><label>Quotation terms</label><textarea id="qTerms">${esc(q?.terms||state.settings.terms||'')}</textarea></div><div class="note" style="margin-top:12px">The total uses quantity Ã— unit rate. Add measurements and workshop specs to the description; automatic cutting and wastage rules await business approval.</div>`;modal(q?'Edit draft quotation':'New quotation',body,`${cancel}<button class="btn primary" id="saveQuote">Save draft</button>`);$('#qClient').value=q?.client_id||'';$('#qAddProduct').onchange=e=>addQuoteProduct(e.target);$('#qAddProduct').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();addQuoteProduct(e.target)}};$('#items').oninput=updateTotal;$('#items').onkeydown=e=>{if(!['Enter','Tab'].includes(e.key))return;if(e.target.matches('.qi-qty')){e.preventDefault();let rate=e.target.closest('.item-row').querySelector('.qi-rate');rate.focus();rate.select()}else if(e.target.matches('.qi-rate')){e.preventDefault();$('#qAddProduct').focus()}};$('#items').onclick=e=>{if(e.target.matches('.qi-remove')){e.target.closest('.item-row').remove();if(!$('#items .item-row'))$('#items').innerHTML='<div class="empty quote-empty" id="emptyItems">Choose a product above to start your item list.</div>';updateTotal()}};$('#qDiscount').oninput=updateTotal;$('#saveQuote').onclick=()=>saveQuote(q?.id||'');updateTotal()}function addQuoteProduct(input){let value=input.value.trim().toLocaleLowerCase(),p=state.products.find(x=>x.code.toLocaleLowerCase()===value||`${x.name} Â· ${x.code}`.toLocaleLowerCase()===value);if(!p){if(value)toast('Choose a product from the catalog suggestions');return}$('#emptyItems')?.remove();$('#items').insertAdjacentHTML('beforeend',itemRow({product_id:p.id,qty:1,rate:p.rate,description:p.name}));input.value='';updateTotal();let row=$('#items').lastElementChild,qty=row.querySelector('.qi-qty');qty.focus();qty.select()}function updateTotal(){if(!$('#items'))return;let sub=[...document.querySelectorAll('#items .item-row')].reduce((s,r)=>s+(Number(r.querySelector('.qi-qty').value)||0)*(Number(r.querySelector('.qi-rate').value)||0),0),dis=Math.min(sub,Math.max(0,Number($('#qDiscount').value)||0));$('#qSubtotal').textContent=money(sub);$('#qDiscShow').textContent=money(dis);$('#qTotal').textContent=money(sub-dis)}async function saveQuote(qid){let items=[...document.querySelectorAll('#items .item-row')].map(r=>({product_id:r.querySelector('.qi-product').value,qty:r.querySelector('.qi-qty').value,rate:r.querySelector('.qi-rate').value,description:r.querySelector('.qi-desc').value.trim()}));let d={client_id:$('#qClient').value,valid_until:$('#qValid').value,discount:$('#qDiscount').value,terms:$('#qTerms').value,items};try{await api(qid?`/api/quotations/${qid}`:'/api/quotations',{method:qid?'PATCH':'POST',body:JSON.stringify(d)});closeModal();state.page='quotes';await loadAll();toast('Draft quotation saved')}catch(e){toast(e.message)}}
-function showQuote(q){let body=`<div style="display:flex;justify-content:space-between"><div><div class="eyebrow">${esc(q.number)} Â· REVISION ${q.revision}</div><h2 style="font-size:18px">${esc(q.client_name)}</h2><div class="secondary">${esc(q.client_phone)} Â· ${esc(q.client_address)}</div></div>${status(q.status)}</div><div class="table-wrap" style="margin-top:18px"><table><thead><tr><th>Item</th><th>Quantity</th><th>Unit rate</th><th>Amount</th></tr></thead><tbody>${q.items.map(i=>`<tr><td><b>${esc(i.product_name)}</b>${i.description?`<div class="secondary">${esc(i.description)}</div>`:''}</td><td>${esc(i.qty)} ${esc(i.unit)}</td><td>${money(i.rate)}</td><td>${money(i.line_total)}</td></tr>`).join('')}</tbody></table></div><div class="total-box" style="max-width:300px;margin-left:auto"><div class="total-line"><span>Subtotal</span><b>${money(q.subtotal)}</b></div><div class="total-line"><span>Discount</span><b>${money(q.discount)}</b></div><div class="total-line final"><span>Total</span><b>${money(q.total)}</b></div></div><div style="margin-top:14px;font-size:10px;color:#738092"><b>Terms</b><p>${esc(q.terms||'â€”')}</p>${q.valid_until?`Valid until ${esc(q.valid_until)}`:''}</div>${q.snapshot?`<div class="secondary">Issued and locked: ${esc(q.issued_at||'')}</div>`:''}`;let controls=q.status==='Draft'?`<button class="btn" data-action="edit-quote" data-id="${q.id}">Edit draft</button><button class="btn primary" data-action="issue" data-id="${q.id}">Issue quotation</button>`:q.status==='Issued'?`<button class="btn" data-action="approved" data-id="${q.id}">Mark approved</button><button class="btn" data-action="rejected" data-id="${q.id}">Mark rejected</button><button class="btn" data-action="revision" data-id="${q.id}">Create revision</button>`:`<button class="btn" data-action="revision" data-id="${q.id}">Create revision</button>`;modal(`${esc(q.number)} Â· Quotation`,body,`${cancel}<button class="btn" data-action="pdf" data-id="${q.id}">Print / PDF</button>${controls}`)}
-async function refreshQuoteModal(qid){try{let q=await api(`/api/quotations/${qid}`);showQuote(q)}catch(e){toast(e.message)}}async function issue(id){if(!confirm('Issue and lock this quotation snapshot?'))return;try{await api(`/api/quotations/${id}/issue`,{method:'POST',body:'{}'});closeModal();await loadAll();toast('Quotation issued and locked')}catch(e){toast(e.message)}}async function setStatus(id,status){try{await api(`/api/quotations/${id}/status`,{method:'POST',body:JSON.stringify({status})});closeModal();await loadAll();toast(`Quotation marked ${status.toLowerCase()}`)}catch(e){toast(e.message)}}async function revise(id){try{let q=await api(`/api/quotations/${id}/revision`,{method:'POST',body:'{}'});closeModal();await loadAll();quoteModal(q)}catch(e){toast(e.message)}}
-function printQuote(q){let v=q.snapshot||q,win=window.open('','_blank');if(!win)return toast('Allow pop-ups to print the quotation');win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(v.number)}</title><style>body{font:14px Arial;color:#263445;max-width:850px;margin:45px auto;padding:0 25px}header{display:flex;justify-content:space-between;border-bottom:2px solid #377be5;padding-bottom:20px}h1{color:#23436c;margin:0 0 5px}small{color:#718094}.meta{display:flex;justify-content:space-between;margin:25px 0}.meta div{line-height:1.8}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5e9ed}th{font-size:11px;text-transform:uppercase;color:#778392}.totals{width:300px;margin:20px 0 0 auto}.totals div{display:flex;justify-content:space-between;padding:7px}.grand{font-size:18px;font-weight:bold;border-top:1px solid #ccd4dd}.terms{margin-top:34px;color:#566273;line-height:1.6}.footer{margin-top:40px;border-top:1px solid #e5e9ed;padding-top:12px;color:#8c98a5;font-size:11px}@media print{body{margin:20px auto}}</style></head><body><header><div><h1>${esc(state.settings.company)}</h1><small>${esc(state.settings.phone)}</small></div><div style="text-align:right"><h2>QUOTATION</h2><b>${esc(v.number)}</b><div><small>${esc(q.created_at?.slice(0,10)||'')}</small></div></div></header><div class="meta"><div><b>Prepared for</b><br>${esc(v.client_name)}<br>${esc(v.client_phone)}<br>${esc(v.client_address)}</div><div><b>Status</b><br>${esc(q.status)}${v.valid_until?`<br><b>Valid until</b><br>${esc(v.valid_until)}`:''}</div></div><table><thead><tr><th>Description</th><th>Quantity</th><th>Unit rate</th><th>Amount</th></tr></thead><tbody>${v.items.map(i=>`<tr><td><b>${esc(i.product_name)}</b>${i.description?`<br><small>${esc(i.description)}</small>`:''}</td><td>${esc(i.qty)} ${esc(i.unit)}</td><td>${money(i.rate)}</td><td>${money(i.line_total)}</td></tr>`).join('')}</tbody></table><div class="totals"><div><span>Subtotal</span><b>${money(v.subtotal)}</b></div><div><span>Discount</span><b>${money(v.discount)}</b></div><div class="grand"><span>Total</span><b>${money(v.total)}</b></div></div><div class="terms"><b>Terms & conditions</b><br>${esc(v.terms||'')}</div><div class="footer">${esc(state.settings.company)} Â· ${esc(v.number)}</div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);win.document.close()}
-function download(data,name,type){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}async function backup(){try{let r=await fetch('/api/backup');if(!r.ok)throw Error((await r.json()).error);download(await r.text(),'frameflow-backup.json','application/json')}catch(e){toast(e.message)}}async function exportCsv(){let rows=[['Number','Date','Client','Status','Subtotal','Discount','Total','Currency'],...state.quotes.map(q=>[q.number,q.created_at,q.client_name,q.status,q.subtotal,q.discount,q.total,q.currency])];download(rows.map(r=>r.map(x=>'"'+String(x??'').replaceAll('"','""')+'"').join(',')).join('\r\n'),'quotations.csv','text/csv')}
-function newUserModal(){modal('Create user',`<div class="form-grid"><div class="field"><label>Name</label><input class="input" id="uName"></div><div class="field"><label>Email</label><input class="input" id="uEmail" type="email"></div><div class="field"><label>Role</label><select class="input" id="uRole">${['Estimator','Sales','Viewer','Administrator'].map(x=>`<option>${x}</option>`).join('')}</select></div><div class="field"><label>Temporary password (12+ characters)</label><input class="input" id="uPassword" type="password"></div></div>`,`${cancel}<button class="btn primary" data-action="create-user">Create account</button>`)}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot').innerHTML){closeModal();return}if(e.altKey&&e.key.toLowerCase()==='n'&&state.user&&state.user.role!=='Viewer'&&!document.querySelector('.modal-bg')){e.preventDefault();quoteModal();return}if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)&&!document.querySelector('.modal-bg')){let search=$('#search');if(search){e.preventDefault();search.focus()}}});
-document.addEventListener('input',e=>{if(e.target.id==='search'){state.search=e.target.value;render()} });document.addEventListener('change',e=>{if(e.target.id==='statusFilter'){state.filter=e.target.value;render()}});document.addEventListener('click',async e=>{let go=e.target.closest('[data-goto]');if(go)return nav(go.dataset.goto);let b=e.target.closest('[data-action]');if(!b)return;let a=b.dataset.action,id=b.dataset.id;try{if(a==='new-client')clientModal();if(a==='edit-client')clientModal(state.clients.find(x=>x.id===id));if(a==='delete-client'){if(confirm('Archive this client?')){await api('/api/clients?id='+encodeURIComponent(id),{method:'DELETE'});await loadAll();toast('Client archived')}}if(a==='import-products')importProducts();if(a==='new-product')productModal();if(a==='edit-product')productModal(state.products.find(x=>x.id===id));if(a==='delete-product'){if(confirm('Archive this product from new quotations?')){await api('/api/products?id='+encodeURIComponent(id),{method:'DELETE'});await loadAll();toast('Product archived')}}if(a==='new-quote')quoteModal();if(a==='view-quote')showQuote(state.quotes.find(x=>x.id===id));if(a==='edit-quote'){let q=state.quotes.find(x=>x.id===id);if(q)quoteModal(q)}if(a==='issue')await issue(id);if(a==='approved')await setStatus(id,'Approved');if(a==='rejected')await setStatus(id,'Rejected');if(a==='revision')await revise(id);if(a==='pdf')printQuote(state.quotes.find(x=>x.id===id));if(a==='backup')await backup();if(a==='export')exportCsv();if(a==='save-settings'){let d={company:$('#setCompany').value.trim(),phone:$('#setPhone').value.trim(),currency:$('#setCurrency').value.trim().toUpperCase(),terms:$('#setTerms').value.trim()};await api('/api/settings',{method:'PATCH',body:JSON.stringify(d)});await loadAll();toast('Settings saved')}if(a==='logout'){await api('/api/auth/logout',{method:'POST',body:'{}'});state.user=null;showLogin()}if(a==='new-user')newUserModal();if(a==='create-user'){let d={name:$('#uName').value,email:$('#uEmail').value,password:$('#uPassword').value,role:$('#uRole').value};await api('/api/users',{method:'POST',body:JSON.stringify(d)});closeModal();await loadAll();toast('User created')}if(a==='save-user'){let role=$(`#role-${id}`).value,active=$(`#active-${id}`).value==='true';await api('/api/users',{method:'PATCH',body:JSON.stringify({id,role,active})});await loadAll();toast('Permissions updated')}}catch(err){toast(err.message)}});boot();
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ^uí:-jZ.¶›­–)Ş³V6öç7B7FFS×·W6W#¦çVÆÂÆ6Æ–VçG3¥µÒÇ&öGV7G3¥µÒÇV÷FW3¥µÒÇ6ÆW3¥µÒÇ6ÆW4f–ÇFW#¢tÆÂrÇ6WGF–æw3§·ÒÇ&W÷'EW&–öC¢vÖöçF‚rÇ&W÷'E7F'C¢rrÇ&W÷'DVæC¢rrÇ&W÷'D6Æ–VçC¢tÆÂrÇ&W÷'E–ÖVçC¢tÆÂrÇ&W÷'E6÷W&6S¢tÆÂrÇW6W'3¥µÒÆVF—C¥µÒÇvS¢vF6†&ö&BrÇ6V&6ƒ¢rrÆf–ÇFW#¢tÆÂrÇV÷FU6÷'C¢væWvW7BwÓ¶6öç7BC×3ÓæFö7VÖVçBçVW'•6VÆV7F÷"‡2’ÆW63×3Óå7G&–ær‡3óòrr’ç&WÆ6R‚õ²cÃâ"uÒörÆ3Óâ‡²rbs¢rf×²rÂsÂs¢rfÇC²rÂsâs¢rfwC²rÂr"s¢rgV÷C²rÂ"r#¢rb33“²wÕ¶5Ò’’ÆÖöæW“ÖãÓæG¶W62‡7FFRç6WGF–æw2æ7W'&Væ7—ÇÂuµ"r—ÒG´çVÖ&W"†çÇÃ’çFôÆö6ÆU7G&–ær‚vVâÕ²rÇ¶Ö–æ–×VÔg&7F–öäF–v—G3£"ÆÖ†–×VÔg&7F–öäF–v—G3£'Ò—Ö¶gVæ7F–öâFö7B‡B—¶ÆWBSÒB‚r7Fö7Br“¶RçFW‡D6öçFVçC×C¶Ræ6Æ74Æ—7BæFB‚w6†÷rr“·6WEF–ÖV÷WB‚‚“ÓæRæ6Æ74Æ—7Bç&VÖ÷fR‚w6†÷rr’Ã#s—Ö7–æ2gVæ7F–öâ’‡W&ÂÆ÷F–öç3×·Ò—¶ÆWB#Öv—BfWF6‚‡W&ÂÇ¶7&VFVçF–Ç3¢w6ÖRÖ÷&–v–ârÂââæ÷F–öç2Æ†VFW'3§²t6öçFVçBÕG—Rs¢vÆ–6F–öâö§6öârÂâââ†÷F–öç2æ†VFW'7ÇÇ·Ò—×Ò’ÆC·G'—¶CÖv—B"æ§6öâ‚—Ö6F6‡¶C×¶W'&÷#¢t–çfÆ–B6W'fW"&W7öç6Rw×Ö–b‚"æö²—F‡&÷rW'&÷"†BæW'&÷'ÇÆ&WVW7Bf–ÆVB‚G·"ç7FGW7Ò–“·&WGW&âGĞĞ¦7–æ2gVæ7F–öâÆöDÆÂ‚—¶ÆWBæÖW3Õ²v6Æ–VçG2rÂw&öGV7G2rÂwV÷FW2rÂw6WGF–æw2rÂw6ÆW2uÒÇ&WVW7G3Öv—B&öÖ—6RæÆÅ6WGFÆVB…¶’‚rö’ö6Æ–VçG2r’Æ’‚rö’÷&öGV7G2r’Æ’‚rö’÷V÷FF–öç2r’Æ’‚rö’÷6WGF–æw2r’Æ’‚rö’÷6ÆW2r•Ò’Æ—77VW3ÕµÓ¶f÷"†ÆWB“Ó¶“ÆæÖW2æÆVæwFƒ¶’²²—¶ÆWB#×&WVW7G5¶•Ó·7FFU¶æÖW5¶•ÕÓ×"ç7FGW3ÓÓÒvgVÆf–ÆÆVBs÷"çfÇVS¢†æÖW5¶•ÓÓÓÒw6WGF–æw2s÷·Ó¥µÒ“¶–b‡"ç7FGW3ÓÓÒw&V¦V7FVBr–—77VW2çW6‚†G¶æÖW5¶•×Ó¢G·"ç&V6öâæÖW76vWÖ—Ö–b‡7FFRçW6W"ç&öÆSÓÓÒtFÖ–æ—7G&F÷"r—¶f÷"†ÆWB¶¶W’ÇW&ÅÒöbµ²wW6W'2rÂrö’÷W6W'2uÒÅ²vVF—BrÂrö’öVF—BuÕÒ—G'—·7FFU¶¶W•ÓÖv—B’‡W&Â—Ö6F6‚†R—·7FFU¶¶W•ÓÕµÓ¶—77VW2çW6‚†G¶¶W—Ó¢G¶RæÖW76vWÖ—×ÒB‚r66ö×ç”Æ&VÂr’çFW‡D6öçFVçC×7FFRç6WGF–æw2æ6ö×ç—ÇÂt'W6–æW72v÷&·76Rs²B‚r7V÷FT6÷VçBr’çFW‡D6öçFVçC×7FFRçV÷FW2æÆVæwFƒ²B‚r76ÆT6÷VçBr’çFW‡D6öçFVçC×7FFRç6ÆW2æÆVæwFƒ²B‚r7W6W$Æ&VÂr’çFW‡D6öçFVçC×7FFRçW6W"ææÖS²B‚r7&öÆTÆ&VÂr’çFW‡D6öçFVçC×7FFRçW6W"ç&öÆS²B‚r6†VFW%W6W"r’çFW‡D6öçFVçC×7FFRçW6W"ææÖS²B‚r6†VFW%&öÆRr’çFW‡D6öçFVçC×7FFRçW6W"ç&öÆS¶Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚ræFÖ–âÖöæÇ’r’æf÷$V6‚‡ƒÓç‚æ†–FFVã×7FFRçW6W"ç&öÆRÓÒtFÖ–æ—7G&F÷"r“¶Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚ræ†VFW"ÖæWrr’æf÷$V6‚‡ƒÓç‚æ†–FFVã×7FFRçW6W"ç&öÆSÓÓÒuf–WvW"r“·&VæFW"‚“¶–b†—77VW2æÆVæwF‚’B‚r7vRr’æ–ç6W'DF¦6VçD…DÔÂ‚vgFW&&Vv–ârÆÆF—b6Æ73Ò&æ÷FR"7G–ÆSÒ&Ö&v–âÖ&÷GFöÓ£g‚#ãÆ#å6öÖR&V6÷&G2F–Bæ÷BÆöBãÂö#âG¶W62†—77VW2æ¦ö–â‚r+rr’—ÒÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"öæ6Æ–6³Ò&ÆöDÆÂ‚’#å&WG'“Âö'WGFöããÂöF—cæ—ĞĞ¦ÆWB6WGWæVVFVCÖfÇ6RÆWF…f–WsÒvÆöv–âs¶7–æ2gVæ7F–öâ&ö÷B‚—·G'—¶ÆWBCÖv—B’‚rö’öWF‚öÖRr“·7FFRçW6W#ÖBçW6W#²B‚r76†VÆÂr’æ†–FFVãÖfÇ6S¶v—BÆöDÆÂ‚—Ö6F6‡·G'—·6WGWæVVFVCÒ†v—B’‚rö’öWF‚÷6WGW×7FGW2r’’ææVVFVC¶WF…f–Ws×6WGWæVVFVCòw6–vçWs¢vÆöv–âs·6†÷tÆöv–â‚—Ö6F6‡·6WGWæVVFVCÖfÇ6S¶WF…f–WsÒvÆöv–âs·6†÷tÆöv–â‚t6ææ÷B&V6‚F†Rg&ÖTfÆ÷r6W'fW"â7F'B&W7F'BÔg&ÖTfÆ÷ræ6ÖBæB&Vg&W6‚F†—2vRâr—××ĞĞ¦gVæ7F–öâ6†÷tÆöv–â†W'&÷#Òrr—¶6öç7B6–vçWÖWF…f–WsÓÓÒw6–vçWs²B‚r76†VÆÂr’æ†–FFVã×G'VS²B‚r6Æöv–âr’æ†–FFVãÖfÇ6S²B‚r6Æöv–âr’æ–ææW$…DÔÃÖÆf÷&Ò6Æ73Ò&Æöv–âÖ6&B"–CÒ&WF„f÷&Ò#ãÆF—b6Æ73Ò&Æövò#äcÂöF—cãÆF—b6Æ73Ò&W–V'&÷r"7G–ÆSÒ&Ö&v–â×F÷£w‚#äe$ÔTdÄõr+rTõDD”ôâ5ETD”óÂöF—cãÆƒâG·6WGWæVVFVCòu6WBW–÷W"v÷&·76Rs§6–vçWòt7&VFR–÷W"66÷VçBs¢u6–vâ–âwÓÂöƒãÇ6Æ73Ò'7V'F—FÆR#âG·6WGWæVVFVCòt7&VFRF†Rf—'7BFÖ–æ—7G&F÷"66÷VçBâs§6–vçWòu&WVW7B66W72Fò–÷W"'W6–æW72v÷&·76Râs¢uW6R–÷W"'W6–æW7266÷VçBâwÓÂ÷âG¶W'&÷#öÆF—b6Æ73Ò"G¶W'&÷"ç7F'G5v—F‚‚u6–vçW&V6V—fVBâr“òvÆöv–â×7V66W72s¢vÆöv–âÖW'&÷"wÒ"&öÆSÒ'7FGW2#âG¶W62†W'&÷"—ÓÂöF—cæ¢rwÒG·6–vçWöÆF—b6Æ73Ò&f–VÆB#ãÆÆ&VÃå–÷W"æÖSÂöÆ&VÃãÆ–çWB6Æ73Ò&–çWB"æÖSÒ&æÖR"WFö6ö×ÆWFSÒ&æÖR"Ö†ÆVæwFƒÒ##"&WV—&VCãÂöF—cæ¢rwÓÆF—b6Æ73Ò&f–VÆB#ãÆÆ&VÃäVÖ–ÃÂöÆ&VÃãÆ–çWB6Æ73Ò&–çWB"æÖSÒ&VÖ–Â"G—SÒ&VÖ–Â"WFö6ö×ÆWFSÒ'W6W&æÖR"&WV—&VCãÂöF—cãÆF—b6Æ73Ò&f–VÆB#ãÆÆ&VÃå77v÷&BG·6–vçWòrƒ"²6†&7FW'2’s¢rwÓÂöÆ&VÃãÆ–çWB6Æ73Ò&–çWB"æÖSÒ'77v÷&B"G—SÒ'77v÷&B"Ö–æÆVæwFƒÒ"G·6–vçWó#£Ò"Ö†ÆVæwFƒÒ##Sb"WFö6ö×ÆWFSÒ"G·6–vçWòvæWr×77v÷&Bs¢v7W'&VçB×77v÷&BwÒ"&WV—&VCãÂöF—câG·6–vçWöÆF—b6Æ73Ò&f–VÆB#ãÆÆ&VÃä6öæf—&Ò77v÷&CÂöÆ&VÃãÆ–çWB6Æ73Ò&–çWB"æÖSÒ&6öæf—&Ò"G—SÒ'77v÷&B"Ö–æÆVæwFƒÒ#""Ö†ÆVæwFƒÒ##Sb"WFö6ö×ÆWFSÒ&æWr×77v÷&B"&WV—&VCãÂöF—cæ¢rwÓÆ'WGFöâ6Æ73Ò&'Fâ&–Ö'’"7G–ÆSÒ'v–GFƒ£S¶Ö&v–â×F÷£‡‚#âG·6WGWæVVFVCòt7&VFRFÖ–æ—7G&F÷"s§6–vçWòu&WVW7B66÷VçBs¢u6–vâ–âwÓÂö'WGFöããÇ6Æ73Ò&Æöv–âÖfö÷B#âG·6WGWæVVFVCòu–÷W"f—'7B66÷VçB—2F†Rv÷&·76RFÖ–æ—7G&F÷"âs§6–vçWòtæWr66÷VçG2æVVBFÖ–æ—7G&F÷"&÷fÂ&Vf÷&R6–vâÖ–ââs¢rwÓÂ÷âG²6WGWæVVFVCöÆ'WGFöâ6Æ73Ò&WF‚×7v—F6‚"G—SÒ&'WGFöâ"–CÒ&WF…7v—F6‚#âG·6–vçWòtÇ&VG’†fRâ66÷VçCò6–vâ–âs¢tæVVBâ66÷VçCò6–vâWwÓÂö'WGFöãæ¢rwÓÂöf÷&Óæ²B‚r6WF„f÷&Òr’æöç7V&Ö—C×6–vçWö7&VFT66÷VçC¦Æöv–ã²B‚r6WF…7v—F6‚r“òæFDWfVçDÆ—7FVæW"‚v6Æ–6²rÂ‚“Óç¶WF…f–Ws×6–vçWòvÆöv–âs¢w6–vçWs·6†÷tÆöv–â‚—Ò—ĞĞ¦7–æ2gVæ7F–öâÆöv–â†R—¶Rç&WfVçDFVfVÇB‚“¶ÆWBcÖæWrf÷&ÔFF†RçF&vWB’ÆC·G'—¶CÖv—B’‚rö’öWF‚öÆöv–ârÇ¶ÖWF†öC¢uõ5BrÆ&öG“¤¥4ôâç7G&–æv–g’‡¶VÖ–Ã¦bævWB‚vVÖ–Âr’Ç77v÷&C¦bævWB‚w77v÷&Br—Ò—Ò—Ö6F6‚†W'"—·&WGW&â6†÷tÆöv–â†W'"æÖW76vR—×7FFRçW6W#ÖBçW6W#²B‚r6Æöv–âr’æ†–FFVã×G'VS²B‚r76†VÆÂr’æ†–FFVãÖfÇ6S¶v—BÆöDÆÂ‚—ĞĞ¦7–æ2gVæ7F–öâ7&VFT66÷VçB†R—¶Rç&WfVçDFVfVÇB‚“¶ÆWBcÖæWrf÷&ÔFF†RçF&vWB“¶–b†bævWB‚w77v÷&Br’ÓÖbævWB‚v6öæf—&Òr’—&WGW&â6†÷tÆöv–â‚u77v÷&G2Fòæ÷BÖF6‚r“¶ÆWBC·G'—¶CÖv—B’‡6WGWæVVFVCòrö’öWF‚÷6WGWs¢rö’öWF‚÷6–vçWrÇ¶ÖWF†öC¢uõ5BrÆ&öG“¤¥4ôâç7G&–æv–g’‡¶æÖS¦bævWB‚væÖRr’ÆVÖ–Ã¦bævWB‚vVÖ–Âr’Ç77v÷&C¦bævWB‚w77v÷&Br—Ò—Ò—Ö6F6‚†W'"—·&WGW&â6†÷tÆöv–â†W'"æÖW76vR—Ö–b‡6WGWæVVFVB—·7FFRçW6W#ÖBçW6W#·6WGWæVVFVCÖfÇ6S²B‚r6Æöv–âr’æ†–FFVã×G'VS²B‚r76†VÆÂr’æ†–FFVãÖfÇ6S¶v—BÆöDÆÂ‚“·&WGW&ç×6†÷tÆöv–â‚u6–vçW&V6V—fVBââFÖ–æ—7G&F÷"×W7B&÷fRF†R66÷VçB&Vf÷&R–÷R6â6–vâ–ââr—ĞĞ¦gVæ7F–öâæb‡—·7FFRçvS×·7FFRç6V&6ƒÒrs·7FFRæf–ÇFW#ÒtÆÂs¶Fö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚rææbr’æf÷$V6‚‡ƒÓç‚æ6Æ74Æ—7BçFövvÆR‚v7F—fRrÇ‚æFF6WBçvSÓÓ×’“²B‚r67'VÖ"r’çFW‡D6öçFVçCÒ‡¶F6†&ö&C¢t÷fW'f–WrrÇV÷FW3¢uV÷FF–öç2rÇ6ÆW3¢u6ÆW2rÇ&W÷'G3¢u&W÷'G2rÆ6Æ–VçG3¢t6Æ–VçG2rÆ6FÆös¢t6FÆörb&FW2rÇW6W'3¢uW6W'2bVF—BrÇ6WGF–æw3¢u6WGF–æw2wÒ•·Ó·&VæFW"‚—ÖFö7VÖVçBçVW'•6VÆV7F÷$ÆÂ‚rææbr’æf÷$V6‚‡ƒÓç‚æöæ6Æ–6³Ò‚“Óææb‡‚æFF6WBçvR’“¶gVæ7F–öâF—FÆR†²ÇBÇ2Æ#Òrr—·&WGW&âÆF—b6Æ73Ò'F—FÆR×&÷r#ãÆF—cãÆF—b6Æ73Ò&W–V'&÷r#âG¶·ÓÂöF—cãÆƒâG·GÓÂöƒãÆF—b6Æ73Ò'7V'F—FÆR#âG·7ÓÂöF—cãÂöF—câG¶'ÓÂöF—cæÖgVæ7F–öâ'WGFöâ†ÆÆ&VÂÆ6Ç3Òrr—·&WGW&âÆ'WGFöâ6Æ73Ò&'FâG¶6Ç7Ò"FFÖ7F–öãÒ"G¶Ò#âG¶Æ&VÇÓÂö'WGFöãæÖgVæ7F–öâ7FGW2‡2—·&WGW&âÇ7â6Æ73Ò'7FGW2G¶W62‡2—Ò#âG¶W62‡2—ÓÂ÷7ãæÖgVæ7F–öâ&÷w2†'"—·&WGW&â'"æÆVæwFƒö'"æÖ‡ÓæÇG#ãÇFCãÆF—b6Æ73Ò'&–Ö'’Ö6VÆÂ#âG¶W62‡æçVÖ&W"—ÓÂöF—cãÆF—b6Æ73Ò'6V6öæF'’#âG¶W62‡æ7&VFVEöCòç6Æ–6RƒÃ—ÇÂrr—ÓÂöF—cãÂ÷FCãÇFCâG¶W62‡æ6Æ–VçEöæÖR—ÓÂ÷FCãÇFCâG·æ—FV×2æÆVæwF‡Ò—FVÒG·æ—FV×2æÆVæwFƒÓÓÓòrs¢w2wÓÂ÷FCãÇFCâG¶ÖöæW’‡çF÷FÂ—ÓÂ÷FCãÇFCâG·7FGW2‡ç7FGW2—ÓÂ÷FCãÇFCãÆF—b6Æ73Ò'6ÖÆÂÖ7F–öç2#ãÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'f–Wr×V÷FR"FFÖ–CÒ"G·æ–GÒ#åf–WsÂö'WGFöããÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'Fb"FFÖ–CÒ"G·æ–GÒ#å&–çCÂö'WGFöããÂöF—cãÂ÷FCãÂ÷G#æ’æ¦ö–â‚rr“¦ÇG#ãÇFB6öÇ7ãÒ#b#ãÆF—b6Æ73Ò&V×G’#äæòV÷FF–öç2–WCÂöF—cãÂ÷FCãÂ÷G#æÖgVæ7F–öâ&VæFW"‚—¶ÆWBÒB‚r7vRr“¶–b‡7FFRçvSÓÓÒvF6†&ö&Br—æ–ææW$…DÔÃÖF6†&ö&B‚“¶–b‡7FFRçvSÓÓÒwV÷FW2r—æ–ææW$…DÔÃ×V÷FW5vR‚“¶–b‡7FFRçvSÓÓÒw6ÆW2r—æ–ææW$…DÔÃ×6ÆW5vR‚“¶–b‡7FFRçvSÓÓÒw&W÷'G2r—æ–ææW$…DÔÃ×&W÷'G5vR‚“¶–b‡7FFRçvSÓÓÒv6Æ–VçG2r—æ–ææW$…DÔÃÖ6Æ–VçG5vR‚“¶–b‡7FFRçvSÓÓÒv6FÆörr—æ–ææW$…DÔÃÖ6FÆöuvR‚“¶–b‡7FFRçvSÓÓÒw6WGF–æw2r—æ–ææW$…DÔÃ×6WGF–æw5vR‚“¶–b‡7FFRçvSÓÓÒwW6W'2r—æ–ææW$…DÔÃ×W6W'5vR‚—ÖgVæ7F–öâF6†&ö&B‚—¶ÆWB3Õ²ââç7FFRçV÷FW5Òç6÷'B‚†Æ"“Óæ"æ7&VFVEöBæÆö6ÆT6ö×&R†æ7&VFVEöB’’Æ&÷fVC×2æf–ÇFW"‡ƒÓç‚ç7FGW3ÓÓÒt&÷fVBr’ç&VGV6R‚‡2Ç‚“Óç2´çVÖ&W"‡‚çF÷FÂ’Ã’ÆG&gG3×2æf–ÇFW"‡ƒÓç‚ç7FGW3ÓÓÒtG&gBr’æÆVæwF‚Æ—77VVC×2æf–ÇFW"‡ƒÓç‚ç7FGW3ÓÓÒt—77VVBr’æÆVæwF‚Æf—'7CÒ‡7FFRçW6W"ææÖWÇÂwF†W&Rr’çG&–Ò‚’ç7Æ—B‚õÇ2²ò•³Ó·&WGW&âÆF—b6Æ73Ò&F6†&ö&BÖ†W&ò#ãÆF—cãÆF—b6Æ73Ò&W–V'&÷r#å”õU"tõ$µ54R+rG¶æWrFFR‚’çFôÆö6ÆTFFU7G&–ær‚vVârÇ·vVV¶F“¢vÆöærrÆÖöçFƒ¢vÆöærrÆF“¢vçVÖW&–2wÒ’çFõWW$66R‚—ÓÂöF—cãÆƒåvVÆ6öÖR&6²ÂG¶W62†f—'7B—ÓÂöƒãÇ6Æ73Ò'7V'F—FÆR#ä†W&^(	—2v†N(	—2†Væ–ærv—F‚–÷W"V÷FF–öç2FöF’ãÂ÷ãÆF—b6Æ73Ò'6†÷'F7WBÖ†–çG2#ãÇ7ããÆ¶&CäÇCÂö¶&CâÆ#â³Âö#âÆ¶&CäãÂö¶&CâæWrV÷FF–öãÂ÷7ããÇ7ããÆ¶&CâóÂö¶&Câ6V&6‚F†—2vSÂ÷7ããÇ7ããÆ¶&CäW63Âö¶&Câ6Æ÷6RF–ÆösÂ÷7ããÂöF—cãÂöF—cãÆF—b6Æ73Ò&†W&òÖ7F–öç2#âG·7FFRçW6W"ç&öÆSÓÓÒuf–WvW"sòrs¦'WGFöâ‚væWr×V÷FRrÂ~ûÈ²fæ'7´7&VFRV÷FF–öârÂw&–Ö'’r—ÓÆ'WGFöâ6Æ73Ò&'Fâ†W&ò×6V6öæF'’"FFÖv÷FóÒ&6Æ–VçG2#åf–Wr6Æ–VçG2Ç7ãî(i#Â÷7ããÂö'WGFöããÂöF—cãÂöF—cãÆF—b6Æ73Ò'7FBÖw&–B#ãÆF—b6Æ73Ò&6&B7FB#ãÆF—b6Æ73Ò'7FB×F÷#ãÇ7ãåF÷FÂV÷FF–öç3Â÷7ããÇ7â6Æ73Ò'7FBÖ–6öâ#î)jCÂ÷7ããÂöF—cãÆF—b6Æ73Ò'7FB×fÇVR#âG·2æÆVæwF‡ÓÂöF—cãÆF—b6Æ73Ò'7FBÖfö÷B#ä7&÷72ÆÂ7FGW6W3ÂöF—cãÂöF—cãÆF—b6Æ73Ò&6&B7FB#ãÆF—b6Æ73Ò'7FB×F÷#ãÇ7ãäG&gG2Fòf–æ—6ƒÂ÷7ããÇ7â6Æ73Ò'7FBÖ–6öâÖ&W"#î)ÈãÂ÷7ããÂöF—cãÆF—b6Æ73Ò'7FB×fÇVR#âG¶G&gG7ÓÂöF—cãÆF—b6Æ73Ò'7FBÖfö÷B#å&VG’f÷"&Wf–WsÂöF—cãÂöF—cãÆF—b6Æ73Ò&6&B7FB#ãÆF—b6Æ73Ò'7FB×F÷#ãÇ7ãäv—F–ær&W7öç6SÂ÷7ããÇ7â6Æ73Ò'7FBÖ–6öâf–öÆWB#î){sÂ÷7ããÂöF—cãÆF—b6Æ73Ò'7FB×fÇVR#âG¶—77VVGÓÂöF—cãÆF—b6Æ73Ò'7FBÖfö÷B#å6VçBFò–÷W"6Æ–VçG3ÂöF—cãÂöF—cãÆF—b6Æ73Ò&6&B7FB#ãÆF—b6Æ73Ò'7FB×F÷#ãÇ7ãä&÷fVBfÇVSÂ÷7ããÇ7â6Æ73Ò'7FBÖ–6öâÖ–çB#î(isÂ÷7ããÂöF—cãÆF—b6Æ73Ò'7FB×fÇVRÖöæW’×7FB#âG¶ÖöæW’†&÷fVB—ÓÂöF—cãÆF—b6Æ73Ò'7FBÖfö÷B#âG·2æf–ÇFW"‡ƒÓç‚ç7FGW3ÓÓÒt&÷fVBr’æÆVæwF‡Ò&÷fVBV÷FF–öç3ÂöF—cãÂöF—cãÂöF—cãÆF—b6Æ73Ò&F6†&ö&BÖw&–B#ãÆF—b6Æ73Ò&6&B6V7F–öâÖ6&B&V6VçBÖ6&B#ãÆF—b6Æ73Ò'6V7F–öâÖ†VB#ãÆF—cãÆF—b6Æ73Ò&W–V'&÷r#å4ÄU25D•d•E“ÂöF—cãÆƒ#å&V6VçBV÷FF–öç3Âöƒ#ãÇå–÷W"ÆFW7B6fVB7W7FöÖW"öffW'3Â÷ãÂöF—cãÆ6Æ73Ò&Æ–æ²"FFÖv÷FóÒ'V÷FW2#åf–WrÆÂÇ7ãî(i#Â÷7ããÂöãÂöF—cãÆF—b6Æ73Ò'F&ÆR×w&#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒåV÷FSÂ÷FƒãÇFƒä6Æ–VçCÂ÷FƒãÇFƒä—FV×3Â÷FƒãÇFƒåF÷FÃÂ÷FƒãÇFƒå7FGW3Â÷FƒãÇFƒãÂ÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âG·&÷w2‡2ç6Æ–6RƒÃb’—ÓÂ÷F&öG“ãÂ÷F&ÆSãÂöF—cãÂöF—cãÆF—b6Æ73Ò&F6†&ö&B×&–Â#ãÆF—b6Æ73Ò&6&B6V7F–öâÖ6&BV–6²Ö6&B#ãÆF—b6Æ73Ò&W–V'&÷r#å4„õ%D5UE3ÂöF—cãÆƒ#åV–6²7F–öç3Âöƒ#ãÆ'WGFöâ6Æ73Ò'V–6²Ö7F–öâ"FFÖ7F–öãÒ&æWr×V÷FR#ãÇ7â6Æ73Ò'V–6²Ö–6öâ#îûÈ³Â÷7ããÇ7ããÆ#å7F'BV÷FF–öãÂö#ãÇ6ÖÆÃå&W&RæWr7W7FöÖW"öffW#Â÷6ÖÆÃãÂ÷7ããÇ7â6Æ73Ò'V–6²Ö'&÷r#î(i#Â÷7ããÂö'WGFöããÆ'WGFöâ6Æ73Ò'V–6²Ö7F–öâ"FFÖv÷FóÒ&6Æ–VçG2#ãÇ7â6Æ73Ò'V–6²Ö–6öâV÷ÆR#î)™“Â÷7ããÇ7ããÆ#äÖævR6Æ–VçG3Âö#ãÇ6ÖÆÃâG·7FFRæ6Æ–VçG2æÆVæwF‡Ò6öçF7G2–â–÷W"v÷&·76SÂ÷6ÖÆÃãÂ÷7ããÇ7â6Æ73Ò'V–6²Ö'&÷r#î(i#Â÷7ããÂö'WGFöããÆ'WGFöâ6Æ73Ò'V–6²Ö7F–öâ"FFÖv÷FóÒ&6FÆör#ãÇ7â6Æ73Ò'V–6²Ö–6öâ6FÆör#î)jsÂ÷7ããÇ7ããÆ#ä6†V6²&öGV7B&FW3Âö#ãÇ6ÖÆÃâG·7FFRç&öGV7G2æÆVæwF‚çFôÆö6ÆU7G&–ær‚—Ò7F—fR6FÆör—FV×3Â÷6ÖÆÃãÂ÷7ããÇ7â6Æ73Ò'V–6²Ö'&÷r#î(i#Â÷7ããÂö'WGFöããÂöF—cãÆF—b6Æ73Ò'v÷&·76R×F—#ãÆF—b6Æ73Ò'F—ÖÖ&²#î)ÊcÂöF—cãÆF—cãÆ#å&FW27F’6öç6—7FVçCÂö#ãÇä—77VVBV÷FF–öç2¶VWF†V—"6fVB&–6W2ÂWfVâv†Vâ–÷W"6FÆör&FW26†ævRãÂ÷ãÂöF—cãÂöF—cãÂöF—cãÂöF—cæĞĞ¦gVæ7F–öâFööÆ&"‡‚Æf–ÇFW'3ÖfÇ6R—·&WGW&âÆF—b6Æ73Ò'FööÆ&"#ãÆ–çWB–CÒ'6V&6‚"6Æ73Ò&–çWB6V&6‚"Æ6V†öÆFW#Ò.(ÉRG·‡Ò"fÇVSÒ"G¶W62‡7FFRç6V&6‚—Ò#âG¶f–ÇFW'3öÇ6VÆV7B–CÒ'7FGW4f–ÇFW""6Æ73Ò&–çWB6VÆV7B#âGµ²tÆÂrÂtG&gBrÂt—77VVBrÂt&÷fVBrÂt6Æ÷6VBrÂu&V¦V7FVBrÂtW‡—&VBuÒæÖ‡ƒÓæÆ÷F–öâG·7FFRæf–ÇFW#ÓÓ×ƒòw6VÆV7FVBs¢rwÓâG·‡ÓÂö÷F–öãæ’æ¦ö–â‚rr—ÓÂ÷6VÆV7Cæ¢rwÓÇ7â7G–ÆSÒ&fÆWƒ£#ãÂ÷7ãâG·7FFRçW6W"ç&öÆSÓÓÒtFÖ–æ—7G&F÷"sö'WGFöâ‚vW‡÷'BrÂ~(i2W‡÷'B55br“¢rwÓÂöF—cæÖgVæ7F–öâV÷FUF&ÆU&÷w2†'"—·&WGW&â'"æÆVæwFƒö'"æÖ‡Óç¶ÆWB&Wf–WsÒ‡æ—FV×7ÇÅµÒ’ç6Æ–6RƒÃ"’æÖ†“Óæ’ç&öGV7EöæÖR’æ¦ö–â‚rÂr’ÆÖ÷&SÒ‡æ—FV×7ÇÅµÒ’æÆVæwF‚Ó#·&WGW&âÇG#ãÇFCãÆF—b6Æ73Ò'V÷FRÖçVÖ&W"#âG¶W62‡æçVÖ&W"—ÓÂöF—cãÆF—b6Æ73Ò'6V6öæF'’#âG¶W62‡æ7&VFVEöCòç6Æ–6RƒÃ—ÇÂrr—ÓÂöF—cãÂ÷FCãÇFCãÆF—b6Æ73Ò'&–Ö'’Ö6VÆÂ#âG¶W62‡æ6Æ–VçEöæÖR—ÓÂöF—cãÆF—b6Æ73Ò'6V6öæF'’#âG¶W62‡æ6Æ–VçE÷†öæWÇÂtæò†öæRr—ÓÂöF—cãÂ÷FCãÇFCãÆF—b6Æ73Ò'V÷FRÖ—FVÒÖ6÷VçB#âG·æ—FV×2æÆVæwF‡Ò—FVÒG·æ—FV×2æÆVæwFƒÓÓÓòrs¢w2wÓÂöF—cãÆF—b6Æ73Ò'6V6öæF'’V÷FRÖ—FVÒ×&Wf–Wr#âG¶W62‡&Wf–WwÇÂtæò—FV×2r—ÒG¶Ö÷&Sãö²G¶Ö÷&WÒÖ÷&V¢rwÓÂöF—cãÂ÷FCãÇFCãÆF—b6Æ73Ò'V÷FR×F÷FÂ#âG¶ÖöæW’‡çF÷FÂ—ÓÂöF—cãÂ÷FCãÇFCâG·7FGW2‡ç7FGW2—ÒG·çfÆ–E÷VçF–ÃöÆF—b6Æ73Ò'6V6öæF'’V÷FR×fÆ–F—G’#åfÆ–BFòG¶W62‡çfÆ–E÷VçF–Â—ÓÂöF—cæ¢rwÓÂ÷FCãÇFCãÆF—b6Æ73Ò'6ÖÆÂÖ7F–öç2#ãÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'f–Wr×V÷FR"FFÖ–CÒ"G·æ–GÒ#åf–WsÂö'WGFöããÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'Fb"FFÖ–CÒ"G·æ–GÒ#åDcÂö'WGFöããÂöF—cãÂ÷FCãÂ÷G#æÒ’æ¦ö–â‚rr“¦ÇG#ãÇFB6öÇ7ãÒ#b#ãÆF—b6Æ73Ò&V×G’V÷FRÖæò×&W7VÇG2#ãÇ7G&öæsâG·7FFRç6V&6‡ÇÇ7FFRæf–ÇFW"ÓÒtÆÂsòtæòÖF6†–ærV÷FF–öç2s¢tæòV÷FF–öç2–WBwÓÂ÷7G&öæsâG·7FFRç6V&6‡ÇÇ7FFRæf–ÇFW"ÓÒtÆÂsòuG'’6†æv–ærF†R6V&6‚÷"7FGW2f–ÇFW"âs¢t7&VFR–÷W"f—'7BV÷FF–öâFò6VR—B†W&RâwÓÂöF—cãÂ÷FCãÂ÷G#æÖgVæ7F–öâV÷FW5vR‚—¶ÆWBFW&Ó×7FFRç6V&6‚çFôÆ÷vW$66R‚’çG&–Ò‚’Ç3×7FFRçV÷FW2æf–ÇFW"‡Óâ‡7FFRæf–ÇFW#ÓÓÒtÆÂwÇÂ‡7FFRæf–ÇFW#ÓÓÒt6Æ÷6VBsõ²u&V¦V7FVBrÂtW‡—&VBuÒæ–æ6ÇVFW2‡ç7FGW2“§ç7FGW3ÓÓ×7FFRæf–ÇFW"’’bb‚FW&×ÇÅ·æçVÖ&W"Çæ6Æ–VçEöæÖRÇæ6Æ–VçE÷†öæRÇç7FGW2Ââââ‡æ—FV×7ÇÅµÒ’æÖ†“ÓæG¶’ç&öGV7EöæÖWÒG¶’æ6öFWÇÂrwÖ•Òæ¦ö–â‚rr’çFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡FW&Ò’’“¶ÆWB6÷'FW'3×¶æWvW7C¢†Æ"“Óæ"æ7&VFVEöBæÆö6ÆT6ö×&R†æ7&VFVEöB’ÆöÆFW7C¢†Æ"“Óææ7&VFVEöBæÆö6ÆT6ö×&R†"æ7&VFVEöB’Æ†–v†W7C¢†Æ"“ÓäçVÖ&W"†"çF÷FÂ’ÔçVÖ&W"†çF÷FÂ’ÆÆ÷vW7C¢†Æ"“ÓäçVÖ&W"†çF÷FÂ’ÔçVÖ&W"†"çF÷FÂ—Ó·2ç6÷'B‡6÷'FW'5·7FFRçV÷FU6÷'E×ÇÇ6÷'FW'2ææWvW7B“¶ÆWB6÷VçG3×´ÆÃ§7FFRçV÷FW2æÆVæwF‚ÄG&gC§7FFRçV÷FW2æf–ÇFW"‡Óçç7FGW3ÓÓÒtG&gBr’æÆVæwF‚Ä—77VVC§7FFRçV÷FW2æf–ÇFW"‡Óçç7FGW3ÓÓÒt—77VVBr’æÆVæwF‚Ä&÷fVC§7FFRçV÷FW2æf–ÇFW"‡Óçç7FGW3ÓÓÒt&÷fVBr’æÆVæwF‚Ä6Æ÷6VC§7FFRçV÷FW2æf–ÇFW"‡Óå²u&V¦V7FVBrÂtW‡—&VBuÒæ–æ6ÇVFW2‡ç7FGW2’’æÆVæwF‡ÒÇFööÇ3×FööÆ&"‚u6V&6‚V÷FRÂ6Æ–VçBÂ†öæRÂ—FVÒÂ÷"7FGW2rÇG'VR’ç&WÆ6R‚sÂ÷6VÆV7CârÂÂ÷6VÆV7CãÇ6VÆV7B–CÒ'V÷FU6÷'B"6Æ73Ò&–çWB6VÆV7BV÷FR×6÷'B"&–ÖÆ&VÃÒ%6÷'BV÷FF–öç2#ãÆ÷F–öâfÇVSÒ&æWvW7B"G·7FFRçV÷FU6÷'CÓÓÒvæWvW7Bsòw6VÆV7FVBs¢rwÓäæWvW7Bf—'7CÂö÷F–öããÆ÷F–öâfÇVSÒ&öÆFW7B"G·7FFRçV÷FU6÷'CÓÓÒvöÆFW7Bsòw6VÆV7FVBs¢rwÓäöÆFW7Bf—'7CÂö÷F–öããÆ÷F–öâfÇVSÒ&†–v†W7B"G·7FFRçV÷FU6÷'CÓÓÒv†–v†W7Bsòw6VÆV7FVBs¢rwÓä†–v†W7BF÷FÃÂö÷F–öããÆ÷F–öâfÇVSÒ&Æ÷vW7B"G·7FFRçV÷FU6÷'CÓÓÒvÆ÷vW7Bsòw6VÆV7FVBs¢rwÓäÆ÷vW7BF÷FÃÂö÷F–öããÂ÷6VÆV7Cæ’Æf–ÇFW'3Õ²tÆÂrÂtG&gBrÂt—77VVBrÂt&÷fVBrÂt6Æ÷6VBuÒæÖ†³ÓæÆ'WGFöâ6Æ73Ò'V÷FRÖf–ÇFW"G·7FFRæf–ÇFW#ÓÓÖ³òv7F—fRs¢rwÒ"FF×V÷FRÖf–ÇFW#Ò"G¶·Ò"&–×&W76VCÒ"G·7FFRæf–ÇFW#ÓÓÖ·Ò#ãÇ7ãâG¶·ÓÂ÷7ããÆ#âG¶6÷VçG5¶µ×ÓÂö#ãÂö'WGFöãæ’æ¦ö–â‚rr“·&WGW&âG·F—FÆR‚u4ÄU2tõ$µ54RrÂuV÷FF–öç2rÂtf–æBÂ&Wf–WræBföÆÆ÷rWfW'’7W7FöÖW"öffW"ârÇ7FFRçW6W"ç&öÆSÓÓÒuf–WvW"sòrs¦'WGFöâ‚væWr×V÷FRrÂ~ûÈ²fæ'7´æWrV÷FF–öârÂw&–Ö'’r’—ÓÆF—b6Æ73Ò'V÷FRÖf–ÇFW'2"&–ÖÆ&VÃÒ$f–ÇFW"V÷FF–öç2'’7FGW2#âG¶f–ÇFW'7ÓÂöF—cãÆF—b6Æ73Ò&6&BvRÖ6&BV÷FRÖÆ—7BÖ6&B#âG·FööÇ7ÓÆF—b6Æ73Ò'V÷FR×&W7VÇG2#ãÇ7ãâG·2æÆVæwF‡ÒöbG·7FFRçV÷FW2æÆVæwF‡ÒV÷FF–öç3Â÷7ãâG·FW&×ÇÇ7FFRæf–ÇFW"ÓÒtÆÂsöÆ'WGFöâ6Æ73Ò'V÷FRÖ6ÆV""FF×V÷FRÖf–ÇFW#Ò$ÆÂ#ä6ÆV"7FGW2f–ÇFW#Âö'WGFöãæ¢rwÓÂöF—cãÆF—b6Æ73Ò'F&ÆR×B#ãÇF&ÆSãÇF†VCãÇG#ãÇFƒåV÷FF–öãÂ÷FƒãÇFƒä6Æ–VçCÂ÷FƒãÇFƒä—FV×3Â÷FƒãÇFƒåF÷FÃÂ÷FƒãÇFƒå7FGW2òfÆ–F—G“Â÷FƒãÇFƒä7F–öç3Â÷FƒãÂ÷G#ãÂ÷F†VCãÇF&öG“âG·V÷FUF&ÆU&÷w2‡2—ÓÂ÷F&öG“ãÂ÷F&ÆSãÂöF—cãÂöF—cæÖgVæ7F–öâf—6–&ÆU6ÆW2‚—¶ÆWBFW&Ó×7FFRç6V&6‚çFôÆ÷vW$66R‚’çG&–Ò‚“·&WGW&â7FFRç6ÆW2æf–ÇFW"‡3Óâ‡7FFRç6ÆW4f–ÇFW#ÓÓÒtÆÂwÇÇ2ç–ÖVçE÷7FGW3ÓÓ×7FFRç6ÆW4f–ÇFW"’bb‚FW&×ÇÅ·2æçVÖ&W"Ç2æ6Æ–VçEöæÖRÇ2çV÷FF–öåöçVÖ&W"Ç2ç–ÖVçE÷7FGW5Òæ¦ö–â‚rr’çFôÆ÷vW$66R‚’æ–æ6ÇVFW2‡FW&Ò’’’ç6÷'B‚†Æ"“Óâ†"ç6öÆEöGÇÂrr’æÆö6ÆT6ö×&R†ç6öÆEöGÇÂrr’—ĞĞ¦gVæ7F–öâ6ÆW5&÷w2‡&÷w2—·&WGW&â&÷w2æÆVæwFƒ÷&÷w2æÖ‡3ÓæÇG#ãÇFCãÆF—b6Æ73Ò'V÷FRÖçVÖ&W"#âG¶W62‡2æçVÖ&W"—ÓÂöF—cãÆF—b6Æ73Ò'6V6öæF'’#âG¶W62‡2ç6öÆEöCòç6Æ–6RƒÃ—ÇÂrr—ÓÂöF—cãÂ÷FCãÇFCãÆF—b6Æ73Ò'&–Ö'’Ö6VÆÂ#âG¶W62‡2æ6Æ–VçEöæÖR—ÓÂöF—cãÂ÷FCãÇFCâG·2çV÷FF–öåöçVÖ&W#öG¶W62‡2çV÷FF–öåöçVÖ&W"—ÓÆF—b6Æ73Ò'6V6öæF'’#å&WbâG·2ç&Wf—6–öçÓÂöF—cæ¢tF—&V7B6ÆRwÓÂ÷FCãÇFCâG²‡2æ—FV×7ÇÅµÒ’æÆVæwF‡ÓÂ÷FCãÇFCãÆ#âG¶ÖöæW’‡2çF÷FÂ—ÓÂö#ãÂ÷FCãÇFCâG¶ÖöæW’‡2æÖ÷VçE÷–B—ÓÂ÷FCãÇFCâG¶ÖöæW’„çVÖ&W"‡2çF÷FÂ’ÔçVÖ&W"‡2æÖ÷VçE÷–B’—ÓÂ÷FCãÇFCâG·7FGW2‡2ç–ÖVçE÷7FGW2—ÓÂ÷FCãÇFCãÆF—b6Æ73Ò'6ÖÆÂÖ7F–öç2#ãÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'f–Wr×6ÆR"FFÖ–CÒ"G·2æ–GÒ#äFWF–Ç3Âö'WGFöããÆ'WGFöâ6Æ73Ò&'FâÖ–æ’"FFÖ7F–öãÒ'&V6÷&B×–ÖVçB"FFÖ–CÒ"G·2æ–GÒ#å–ÖVçCÂö'WGFöããÂöF—cãÂ÷FCãÂ÷G#æ’æ¦ö–â‚rr“¦ÇG#ãÇFB6öÇ7ãÒ#’#ãÆF—b6Æ73Ò&V×G’#ãÇ7G&öæsâG·7FFRç6V&6‡ÇÇ7FFRç6ÆW4f–ÇFW"ÓÒtÆÂsòtæòÖF6†–ær6ÆW2s¢tæò6ÆW2&V6÷&FVB–WBwÓÂ÷7G&öæsâG·7FFRç6V&6‡ÇÇ7FFRç6ÆW4f–ÇFW"ÓÒtÆÂsòuG'’æ÷F†W"6V&6‚÷"–ÖVçB7FGW2âs¢t6öçfW'Bâ&÷fVBV÷FF–öâ÷"&V6÷&BF—&V7B6ÆRâwÓÂöF—cãÂ÷FCãÂ÷G#æĞĞ¦gVæ7F–öâ6ÆW5vR‚—¶ÆWBF÷FÃ×7FFRç6ÆW2ç&VGV6R‚‡7VÒÇ2“Óç7VÒ´çVÖ&W"‡2çF÷FÇÇÃ’Ã’Ç–C×7FFRç6ÆW2ç&VGV6R‚‡7VÒÇ2“Óç7VÒ´çVÖ&W"‡2æÖ÷VçE÷–GÇÃ’Ã’Æ÷WG7FæF–æs×F÷FÂ×–BÇ&÷w3×f—6–&ÆU6ÆW2‚’Æ7F–öç3ÖG·7FFRçW6W"ç&öÆSÓÓÒtFÖ–æ—7G&F÷"sö'WGFöâ‚vW‡÷'B×6ÆW2rÂ~(i2fæ'7´W‡÷'B55br“¢rwÒG¶'WGFöâ‚vv÷Fò×&W÷'G2rÂ~)jRfæ'7µf–Wr&W÷'G2r—ÒG·7FFRçW6W"ç&öÆSÓÓÒuf–WvW"sòrs¦'WGFöâ‚væWrÖF—&V7B×6ÆRrÂ~ûÈ²fæ'7´F—&V7B6ÆRrÂw&–Ö'’r—Ö·&WGW&âG·F—FÆR‚u$UdTåTRtõ$µ54RrÂu6ÆW2rÂuV÷FF–öâ6öçfW'6–öç2æBF—&V7B7W7FöÖW"6ÆW2ârÆ7F–öç2—ÓÆF—b6Æ73Ò'6ÆW2×7VÖÖ'’#ãÆF—b6Æ73Ò&6&B6ÆW2×7FB#ãÇ7ãå&V6÷&FVB6ÆW3Â÷7ããÆ#âG·7FFRç6ÆW2æÆVæwF‡ÓÂö#ãÇ6ÖÆÃä6öçfW'FVBæBF—&V7B6ÆW3Â÷6ÖÆÃãÂöF—cãÆF—b6Æ73Ò&6&B6ÆW2×7FB#ãÇ7ãå6ÆW2fÇVSÂ÷7ããÆ#âG¶ÖöæW’‡F÷FÂ—ÓÂö#ãÇ6ÖÆÃäÆÂ&V6÷&FVB6ÆW3Â÷6ÖÆÃãÂöF—cãÆF—b6Æ73Ò&6&B6ÆW2×7FB#ãÇ7ãå&V6V—fVCÂ÷7ããÆ#âG¶ÖöæW’‡–B—ÓÂö#ãÇ6ÖÆÃå–ÖVçG2&V6÷&FVCÂ÷6ÖÆÃãÂöF—cãÆF—b6Æ73Ò&6&B6ÆW2×7FB#ãÇ7ãä÷WG7FæF–æsÂ÷7ããÆ#âG¶ÖöæW’†÷WG7FæF–ær—ÓÂö#ãÇ6ÖÆÃä&Ææ6RFò6öÆÆV7CÂ÷6ÖÆÃãÂöF—cãÂöF—cãÆF—b6Æ73Ò&6&BvRÖ6&B6ÆW2×F&ÆRÖ6&B#ãÆF—b6Æ73Ò'6ÆW2×F&ÆRÖ†VF–ær#ãÆF—cãÆƒ#å6ÆW2&Vv—7FW#Âöƒ#ãÇäV6‚6ÆR&W6W'fW2—G2—FVÒ&–6W2æB–ÖVçB&Ææ6RãÂ÷ãÂöF—cãÇ7ãâG·&÷w2æÆVæwF‡ÒöbG·7FFRç6ÆW2æÆVæwF‡Ò6ÆRG·7FFRç6y×»h‘éì¶»§q«^tÒQ’PĞUSÓ”ÏÜÜ[Ü[ÜÜ[Ù]]ˆYHš][\È‰Û[™\Ë›[™İÛ[™\Ë›X\
+][T›İÊKš›Ú[Š	ÉÊN˜]ˆÛ\ÜÏH™[\H][İKY[\HˆYH™[\R][\ÈÚÛÜÙHH›ÙXİX›İ™HÈİ\[İ\ˆ][H\İÙ]˜OÙ]]ˆÛ\ÜÏHİ[X›Ş]ˆÛ\ÜÏHİ[[[™HÜ[”İXİ[ÜÜ[ˆYHœTİXİ[‰Û[Û™^JOËœİXİ[
+_OØÙ]]ˆÛ\ÜÏHİ[[[™HÜ[‘\ØÛİ[ÜÜ[ˆYHœQ\ØÔÚİÈ‰Û[Û™^JOË™\ØÛİ[
+_OØÙ]]ˆÛ\ÜÏHİ[[[™Hš[˜[Ü[•İ[ÜÜ[ˆYHœUİ[‰Û[Û™^JOËİ[
+_OØÙ]Ù]]ˆÛ\ÜÏH™šY[ˆİ[OH›X\™Ú[‹]ÜŒMX™[”][İ][Ûˆ\›\ÏÛX™[^\™XHYHœU\›\È‰Ù\ØÊOË\›\ßİ]KœÙ][™ÜË\›\ß	ÉÊ_Oİ^\™XOÙ]]ˆÛ\ÜÏH››İHˆİ[OH›X\™Ú[‹]ÜŒLœ•Hİ[\Ù\È]X[]H0åÈ[š]˜]KˆYYX\İ\™[Y[È[™ÛÜšÜÚÜÜXÜÈÈH\ØÜš\[ÛÈ]]ÛX]XÈİ][™È[™Ø\İYÙH[\È]ØZ]\Ú[™\ÜÈ\›İ˜[Ù]˜Û[Ù[
+OÉÑY]˜Y][İ][Û‰Î‰Ó™]È][İ][Û‰Ë›ÙK	ØØ[˜Ù[O]ÛˆÛ\ÜÏH˜ˆš[X\HˆYHœØ]™T][İH”Ø]™H˜YØ]Û˜
+NÉ
+	ÈÜPÛY[	ÊK˜[YO\OË˜ÛY[ÚY	ÉÎÉ
+	ÈÜPY›ÙXİ	ÊK›Û˜Ú[™ÙOYOO˜Y][İT›ÙXİ
+K\™Ù]
+NÉ
+	ÈÜPY›ÙXİ	ÊK›ÛšÙ^YİÛYOOÚYŠKšÙ^OOOIÑ[\‰Ê^ÙKœ™]™[Y˜][
+
+NØY][İT›ÙXİ
+K\™Ù]
+__NÉ
+	ÈÚ][\ÉÊK›Ûš[œ]]\]Uİ[É
+	ÈÚ][\ÉÊK›ÛšÙ^YİÛYOOÚYŠVÉÑ[\‰Ë	ÕX‰×Kš[˜ÛY\ÊKšÙ^JJ\™]\›ÚYŠK\™Ù]›X]Ú\Ê	ËœZK\]IÊJ^ÙKœ™]™[Y˜][
+
+NÛ]˜]OYK\™Ù]˜ÛÜÙ\İ
+	Ëš][K\›İÉÊKœ]Y\TÙ[XİÜŠ	ËœZK\˜]IÊNÜ˜]K™›Øİ\Ê
+NÜ˜]KœÙ[Xİ
+
+_Y[ÙHYŠK\™Ù]›X]Ú\Ê	ËœZK\˜]IÊJ^ÙKœ™]™[Y˜][
+
+NÉ
+	ÈÜPY›ÙXİ	ÊK™›Øİ\Ê
+__NÉ
+	ÈÚ][\ÉÊK›Û˜ÛXÚÏYOOÚYŠK\™Ù]›X]Ú\Ê	ËœZK\™[[İ™IÊJ^ÙK\™Ù]˜ÛÜÙ\İ
+	Ëš][K\›İÉÊKœ™[[İ™J
+NÚYŠI
+	ÈÚ][\Èš][K\›İÉÊJI
+	ÈÚ][\ÉÊKš[›™\’SIÏ]ˆÛ\ÜÏH™[\H][İKY[\HˆYH™[\R][\ÈÚÛÜÙHH›ÙXİX›İ™HÈİ\[İ\ˆ][H\İÙ]‰Îİ\]Uİ[
+
+__NÉ
+	ÈÜQ\ØÛİ[	ÊK›Ûš[œ]]\]Uİ[É
+	ÈÜØ]™T][İIÊK›Û˜ÛXÚÏJ
+OOœØ]™T][İJOËšY	ÉÊNİ\]Uİ[
+
+_Y[˜İ[ÛˆY][İT›ÙXİ
+[œ]
+^Û]˜[YOZ[œ]˜[YKš[J
+KÓØØ[SİÙ\Ø\ÙJ
+K\İ]Kœ›ÙXİË™š[™
+O˜ÛÙKÓØØ[SİÙ\Ø\ÙJ
+OOO]˜[Y_	Ş›˜[Y_H0­È	Ş˜ÛÙ_XÓØØ[SİÙ\Ø\ÙJ
+OOO]˜[YJNÚYŠ\
+^ÚYŠ˜[YJ]Ø\İ
+	ĞÚÛÜÙHH›ÙXİœ›ÛHHØ][ÙÈİYÙÙ\İ[ÛœÉÊNÜ™]\›ŸI
+	ÈÙ[\R][\ÉÊOËœ™[[İ™J
+NÉ
+	ÈÚ][\ÉÊKš[œÙ\Y˜XÙ[S
+	Ø™Y›Ü™Y[™	Ë][T›İÊÜ›ÙXİÚYœšY]NŒK˜]Nœœ˜]K\ØÜš\[Ûœ›˜[Y_JJNÚ[œ]˜[YOIÉÎİ\]Uİ[
+
+NÛ]›İÏI
+	ÈÚ][\ÉÊK›\İ[[Y[Ú[]O\›İËœ]Y\TÙ[XİÜŠ	ËœZK\]IÊNÜ]K™›Øİ\Ê
+NÜ]KœÙ[Xİ
+
+_Y[˜İ[Ûˆ\]Uİ[
+
+^ÚYŠI
+	ÈÚ][\ÉÊJ\™]\›Û]İXVË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+	ÈÚ][\Èš][K\›İÉÊWKœ™YXÙJ
+ËŠOOœÊÊ[X™\Š‹œ]Y\TÙ[XİÜŠ	ËœZK\]IÊK˜[YJ_
+JŠ[X™\Š‹œ]Y\TÙ[XİÜŠ	ËœZK\˜]IÊK˜[YJ_
+K
+K\ÏSX]›Z[ŠİX‹X]›X^
+[X™\Š	
+	ÈÜQ\ØÛİ[	ÊK˜[YJ_
+JNÉ
+	ÈÜTİXİ[	ÊK^ÛÛ[[[Û™^JİXŠNÉ
+	ÈÜQ\ØÔÚİÉÊK^ÛÛ[[[Û™^J\ÊNÉ
+	ÈÜUİ[	ÊK^ÛÛ[[[Û™^JİX‹Y\Ê_X\Ş[˜È[˜İ[ÛˆØ]™T][İJZY
+^Û]›İÜÏVË‹‹™Øİ[Y[œ]Y\TÙ[XİÜ[
+	ÈÚ][\Èš][K\›İÉÊWK][\Ï\›İÜË›X\
+OŠÜ›ÙXİÚYœ‹œ]Y\TÙ[XİÜŠ	ËœZK\›ÙXİ	ÊK˜[YK]Nœ‹œ]Y\TÙ[XİÜŠ	ËœZK\]IÊK˜[YK˜]Nœ‹œ]Y\TÙ[XİÜŠ	ËœZK\˜]IÊK˜[YK\ØÜš\[Ûœ‹œ]Y\TÙ[XİÜŠ	ËœZKY\ØÉÊK˜[YKš[J
+_JJK^ØÛY[ÚY‰
+	ÈÜPÛY[	ÊK˜[YK˜[Yİ[[‰
+	ÈÜU˜[Y	ÊK˜[YK\ØÛİ[‰
+	ÈÜQ\ØÛİ[	ÊK˜[YK\›\Î‰
+	ÈÜU\›\ÉÊK˜[YK][\ßNÚYŠY˜ÛY[ÚY
+\™]\›ˆØ\İ
+	ÔÙ[XİHÛY[š\œİ	ÊNÚYŠZ][\Ë›[™İ
+\™]\›ˆØ\İ
+	ĞY]X\İÛ™H›ÙXİ	ÊNÙ›ÜŠ]OLÚO][\Ë›[™İÚJÊÊ^Û]][OZ][\ÖÚWNÚYŠZ][Kœ›ÙXİÚY
+\™]\›ˆØ\İ
+ÚÛÜÙHHØ][ÙÈ›ÙXİ›Üˆ][H	ÚJÌ_X
+NÚYŠS[X™\‹š\Ñš[š]J[X™\Š][Kœ]JJ_[X™\Š][Kœ]JOL
+\™]\›ˆØ\İ
+[\ˆH]X[]HÜ™X]\ˆ[ˆ™\›È›Üˆ][H	ÚJÌ_X
+NÚYŠS[X™\‹š\Ñš[š]J[X™\Š][Kœ˜]JJ_[X™\Š][Kœ˜]JO
+\™]\›ˆØ\İ
+[\ˆH˜[Y˜]H›Üˆ][H	ÚJÌ_X
+_ZYŠS[X™\‹š\Ñš[š]J[X™\Š™\ØÛİ[
+J_[X™\Š™\ØÛİ[
+O
+\™]\›ˆØ\İ
+	Ñ\ØÛİ[Ø[››İ™H™YØ]]™IÊNÛ]I
+	ÈÜØ]™T][İIÊNÚYŠ‹™\ØX›Y
+\™]\›Ø‹™\ØX›Y]YNØ‹^ÛÛ[IÔØ]š[™ø )‰Îİ^Ø]ØZ]\JZYØØ\KÜ][İ][ÛœËÉÜZYX‰ËØ\KÜ][İ][ÛœÉËÛY]ÙœZYÉÔUÒ	Î‰ÔÔÕ	Ë›ÙN’”ÓÓ‹œİš[™ÚYJ
+_JNØÛÜÙS[Ù[
+
+NÜİ]KœYÙOIÜ][İ\ÉÎØ]ØZ]ØY[
+
+NİØ\İ
+	Ñ˜Y][İ][ÛˆØ]™Y	Ê_XØ]Ú
+J^Ø‹™\ØX›YY˜[ÙNØ‹^ÛÛ[IÔØ]™H˜Y	ÎİØ\İ
+K›Y\ÜØYÙJ__CB™[˜İ[ÛˆÚİÔ][İJJ^Û]›ÙOX]ˆİ[OH™\Ü^N™›^Ú\İYKXÛÛ[œÜXÙKX™]ÙY[ˆ]]ˆÛ\ÜÏH™^YXœ›İÈ‰Ù\ØÊK›[X™\Š_H0­È‘U’TÒSÓˆ	ÜKœ™]š\Ú[ÛŸOÙ]ˆİ[OH™›Û\Ú^™NŒN‰Ù\ØÊK˜ÛY[Û˜[YJ_OÚ]ˆÛ\ÜÏHœÙXÛÛ™\H‰Ù\ØÊK˜ÛY[ÜÛ™J_H0­È	Ù\ØÊK˜ÛY[ØY™\ÜÊ_OÙ]Ù]‰Üİ]\ÊKœİ]\Ê_OÙ]]ˆÛ\ÜÏHX›K]Ü˜\ˆİ[OH›X\™Ú[‹]ÜŒNX›OXY’][Oİ”]X[]Oİ•[š]˜]Oİ[[İ[İİİXY›ÙO‰ÜKš][\Ë›X\
+OO˜‰Ù\ØÊKœ›ÙXİÛ˜[YJ_OØ‰ÚK™\ØÜš\[ÛØ]ˆÛ\ÜÏHœÙXÛÛ™\H‰Ù\ØÊK™\ØÜš\[ÛŠ_OÙ]˜‰ÉßOİ‰Ù\ØÊKœ]J_H	Ù\ØÊK[š]
+_Oİ‰Û[Û™^JKœ˜]J_Oİ‰Û[Û™^JK›[™Wİİ[
+_Oİİ˜
+Kš›Ú[Š	ÉÊ_Oİ›ÙOİX›OÙ]]ˆÛ\ÜÏHİ[X›Şˆİ[OH›X^]ÚYŒÌÛX\™Ú[‹[Y˜]]È]ˆÛ\ÜÏHİ[[[™HÜ[”İXİ[ÜÜ[‰Û[Û™^JKœİXİ[
+_OØÙ]]ˆÛ\ÜÏHİ[[[™HÜ[‘\ØÛİ[ÜÜ[‰Û[Û™^JK™\ØÛİ[
+_OØÙ]]ˆÛ\ÜÏHİ[[[™Hš[˜[Ü[•İ[ÜÜ[‰Û[Û™^JKİ[
+_OØÙ]Ù]]ˆİ[OH›X\™Ú[‹]ÜŒMÙ›Û\Ú^™NŒLØÛÛÜˆÍÌÎLˆ•\›\ÏØ‰Ù\ØÊK\›\ß	ø %	Ê_OÜ‰ÜK˜[Yİ[[Ø˜[Y[[	Ù\ØÊK˜[Yİ[[
+_X‰ÉßOÙ]‰ÜKœÛ˜\ÚİØ]ˆÛ\ÜÏHœÙXÛÛ™\H’\ÜİYY[™ØÚÙYˆ	Ù\ØÊKš\ÜİYYØ]	ÉÊ_OÙ]˜‰ÉßXÛ]ÛÛ›ÛÏ\Kœİ]\ÏOOIÑ˜Y	ÏØ]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛH™Y]\][İHˆ]KZYH‰ÜKšYH‘Y]˜YØ]Û]ÛˆÛ\ÜÏH˜ˆš[X\Hˆ]KXXİ[ÛHš\ÜİYHˆ]KZYH‰ÜKšYH’\ÜİYH][İ][ÛØ]Û˜œKœİ]\ÏOOIÒ\ÜİYY	ÏØ]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛH˜\›İ™Yˆ]KZYH‰ÜKšYH“X\šÈ\›İ™YØ]Û]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœ™Z™XİYˆ]KZYH‰ÜKšYH“X\šÈ™Z™XİYØ]Û]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœ™]š\Ú[Ûˆˆ]KZYH‰ÜKšYHÜ™X]H™]š\Ú[ÛØ]Û˜œKœİ]\ÏOOIĞ\›İ™Y	ÏÊİ]KœØ[\ËœÛÛYJÏOœËœ][İ][Û—ÚYOO\KšY
+OØ]ÛˆÛ\ÜÏH˜ˆš[X\Hˆ]KXXİ[ÛH™ÛİË\Ø[\È•šY]ÈØ[\È™YÚ\İ\Ø]Û]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœ™]š\Ú[Ûˆˆ]KZYH‰ÜKšYHÜ™X]H™]š\Ú[ÛØ]Û˜˜]ÛˆÛ\ÜÏH˜ˆš[X\Hˆ]KXXİ[ÛH˜ÛÛ™\\Ø[Hˆ]KZYH‰ÜKšYHÛÛ™\ÈØ[OØ]Û]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœ™]š\Ú[Ûˆˆ]KZYH‰ÜKšYHÜ™X]H™]š\Ú[ÛØ]Û˜
+N˜]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœ™]š\Ú[Ûˆˆ]KZYH‰ÜKšYHÜ™X]H™]š\Ú[ÛØ]Û˜Û[Ù[
+	Ù\ØÊK›[X™\Š_H0­È][İ][Û˜›ÙK	ØØ[˜Ù[O]ÛˆÛ\ÜÏH˜ˆˆ]KXXİ[ÛHœˆˆ]KZYH‰ÜKšYH”š[ÈØ]Û‰ØÛÛ›ÛßX
+_CB˜\Ş[˜È[˜İ[ÛˆÛÛ™\Ø[JY
+^Û]O\İ]Kœ][İ\Ë™š[™
+OšYOOZY
+NÚYŠ\J\™]\›Û]^\İ[™Ï\İ]KœØ[\Ë™š[™
+ÏOœËœ][İ][Û—ÚYOOZY
+NÚYŠ^\İ[™Ê^Û˜]Š	ÜØ[\ÉÊNÜ™]\›ŸZYŠXÛÛ™š\›JÛÛ™\\›İ™Y][İ][Ûˆ	ÜK›[X™\ŸH›Üˆ	ÜK˜ÛY[Û˜[Y_H[ÈHØ[OØ
+J\™]\›İ^Ø]ØZ]\JØ\KÜ][İ][ÛœËÉÚYKØÛÛ™\ÛY]Ù‰ÔÔÕ	Ë›ÙN‰ŞßIßJNØÛÜÙS[Ù[
+
+NØ]ØZ]ØY[
+
+NÛ˜]Š	ÜØ[\ÉÊNİØ\İ
+	Ô][İ][ÛˆÛÛ™\YÈØ[IÊ_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__CB˜\Ş[˜È[˜İ[Ûˆ™Yœ™\Ú][İS[Ù[
+ZY
+^İ^Û]OX]ØZ]\JØ\KÜ][İ][ÛœËÉÜZYX
+NÜÚİÔ][İJJ_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__X\Ş[˜È[˜İ[Ûˆ\ÜİYJY
+^ÚYŠXÛÛ™š\›J	Ò\ÜİYH[™ØÚÈ\È][İ][ÛˆÛ˜\ÚİÉÊJ\™]\›İ^Ø]ØZ]\JØ\KÜ][İ][ÛœËÉÚYKÚ\ÜİYXÛY]Ù‰ÔÔÕ	Ë›ÙN‰ŞßIßJNØÛÜÙS[Ù[
+
+NØ]ØZ]ØY[
+
+NİØ\İ
+	Ô][İ][Ûˆ\ÜİYY[™ØÚÙY	Ê_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__X\Ş[˜È[˜İ[ÛˆÙ]İ]\ÊYİ]\Ê^İ^Ø]ØZ]\JØ\KÜ][İ][ÛœËÉÚYKÜİ]\ØÛY]Ù‰ÔÔÕ	Ë›ÙN’”ÓÓ‹œİš[™ÚYJÜİ]\ßJ_JNØÛÜÙS[Ù[
+
+NØ]ØZ]ØY[
+
+NİØ\İ
+][İ][ÛˆX\šÙY	Üİ]\ËÓİÙ\Ø\ÙJ
+_X
+_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__X\Ş[˜È[˜İ[Ûˆ™]š\ÙJY
+^İ^Û]OX]ØZ]\JØ\KÜ][İ][ÛœËÉÚYKÜ™]š\Ú[Û˜ÛY]Ù‰ÔÔÕ	Ë›ÙN‰ŞßIßJNØÛÜÙS[Ù[
+
+NØ]ØZ]ØY[
+
+NÜ][İS[Ù[
+J_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__CB™[˜İ[Ûˆš[][İJJ^Û]\KœÛ˜\ÚİKÚ[]Ú[™İË›Ü[Š	ÉË	×Ø›[šÉÊNÚYŠ]Ú[Š\™]\›ˆØ\İ
+	Ğ[İÈÜ]\ÈÈš[H][İ][Û‰ÊNİÚ[‹™Øİ[Y[Üš]JYØİ\H[[XYY]HÚ\œÙ]H]‹N]O‰Ù\ØÊ‹›[X™\Š_Oİ]Oİ[O˜›Ù^Ù›ÛŒM\šX[ØÛÛÜˆÌŒÍNÛX^]ÚYLÛX\™Ú[\]]ÎÜY[™ÎŒ\ZXY\Ù\Ü^N™›^Ú\İYKXÛÛ[œÜXÙKX™]ÙY[Ø›Ü™\‹X›İÛNŒœÛÛYÌÍÍØ™MNÜY[™ËX›İÛNŒŒZ^ØÛÛÜˆÌŒÍÍ˜ÎÛX\™Ú[Œ\\ÛX[ØÛÛÜˆÍÌNMK›Y]^Ù\Ü^N™›^Ú\İYKXÛÛ[œÜXÙKX™]ÙY[ÛX\™Ú[Œ\K›Y]H]Û[™KZZYÚŒK]X›^İÚYŒL	NØ›Ü™\‹XÛÛ\ÙN˜ÛÛ\ÙNÛX\™Ú[‹]ÜŒŒœ]İ^X[YÛ›YÜY[™ÎŒLœØ›Ü™\‹X›İÛNŒ\ÛÛYÙMYNYY]Ù›Û\Ú^™NŒL\İ^]˜[œÙ›Ü›N\\˜Ø\ÙNØÛÛÜˆÍÍÎÎLŸKİ[ŞİÚYŒÌÛX\™Ú[ŒŒ]]ßKİ[È]Ù\Ü^N™›^Ú\İYKXÛÛ[œÜXÙKX™]ÙY[ÜY[™ÎÜK™Ü˜[™Ù›Û\Ú^™NŒNÙ›Û]ÙZYÚ˜›ÛØ›Ü™\‹]ÜŒ\ÛÛYØØÙK\›\ŞÛX\™Ú[‹]ÜŒÍØÛÛÜˆÍMŒÌÎÛ[™KZZYÚŒKŸK™›Ûİ\ÛX\™Ú[‹]ÜØ›Ü™\‹]ÜŒ\ÛÛYÙMYNYYÜY[™Ë]ÜŒLœØÛÛÜˆÎÎNMNÙ›Û\Ú^™NŒL\PYYXHš[Ø›Ù^ÛX\™Ú[ŒŒ]]ß_OÜİ[OÚXY›ÙOXY\]O‰Ù\ØÊİ]KœÙ][™ÜË˜ÛÛ\[J_OÚOÛX[‰Ù\ØÊİ]KœÙ][™ÜËœÛ™J_OÜÛX[Ù]]ˆİ[OH^X[YÛœšYÚ”USÕUSÓÚ‰Ù\ØÊ‹›[X™\Š_OØ]ÛX[‰Ù\ØÊK˜Ü™X]YØ]ËœÛXÙJL
+_	ÉÊ_OÜÛX[Ù]Ù]ÚXY\]ˆÛ\ÜÏH›Y]H]”™\\™Y›ÜØœ‰Ù\ØÊ‹˜ÛY[Û˜[YJ_Oœ‰Ù\ØÊ‹˜ÛY[ÜÛ™J_Oœ‰Ù\ØÊ‹˜ÛY[ØY™\ÜÊ_OÙ]]”İ]\ÏØœ‰Ù\ØÊKœİ]\Ê_Iİ‹˜[Yİ[[Øœ•˜[Y[[Øœ‰Ù\ØÊ‹˜[Yİ[[
+_X‰ÉßOÙ]Ù]X›OXY‘\ØÜš\[Ûİ”]X[]Oİ•[š]˜]Oİ[[İ[İİİXY›ÙO‰İ‹š][\Ë›X\
+OO˜‰Ù\ØÊKœ›ÙXİÛ˜[YJ_OØ‰ÚK™\ØÜš\[ÛØœÛX[‰Ù\ØÊK™\ØÜš\[ÛŠ_OÜÛX[˜‰ÉßOİ‰Ù\ØÊKœ]J_H	Ù\ØÊK[š]
+_Oİ‰Û[Û™^JKœ˜]J_Oİ‰Û[Û™^JK›[™Wİİ[
+_Oİİ˜
+Kš›Ú[Š	ÉÊ_Oİ›ÙOİX›O]ˆÛ\ÜÏHİ[È]Ü[”İXİ[ÜÜ[‰Û[Û™^J‹œİXİ[
+_OØÙ]]Ü[‘\ØÛİ[ÜÜ[‰Û[Û™^J‹™\ØÛİ[
+_OØÙ]]ˆÛ\ÜÏH™Ü˜[™Ü[•İ[ÜÜ[‰Û[Û™^J‹İ[
+_OØÙ]Ù]]ˆÛ\ÜÏH\›\È•\›\È	ˆÛÛ™][ÛœÏØœ‰Ù\ØÊ‹\›\ß	ÉÊ_OÙ]]ˆÛ\ÜÏH™›Ûİ\ˆ‰Ù\ØÊİ]KœÙ][™ÜË˜ÛÛ\[J_H0­È	Ù\ØÊ‹›[X™\Š_OÙ]ØÜš\Ú[™İË›Û›ØYJ
+OOœÙ][Y[İ]
 
 
+OOÚ[™İËœš[
 
+KL
+OÜØÜš\Ø›ÙOÚ[˜
+NİÚ[‹™Øİ[Y[˜ÛÜÙJ
+_CB™[˜İ[ÛˆİÛ›ØY
+]K˜[YK\J^Û]OYØİ[Y[˜Ü™X]Q[[Y[
+	ØIÊNØKš™YUT“˜Ü™X]SØš™XİT“
+™]È›ØŠÙ]WKİ\_JJNØK™İÛ›ØY[˜[YNØK˜ÛXÚÊ
+NÜÙ][Y[İ]
+
+
+OO•T“œ™]›ÚÙSØš™XİT“
+Kš™YŠKL
+_X\Ş[˜È[˜İ[Ûˆ˜XÚİ\
+
+^İ^Û]X]ØZ]™]Ú
+	ËØ\KØ˜XÚİ\	ÊNÚYŠ\‹›ÚÊ]›İÈ\œ›ÜŠ
+]ØZ]‹šœÛÛŠ
+JK™\œ›ÜŠNÙİÛ›ØY
+]ØZ]‹^
+
+K	Ùœ˜[YY›İËX˜XÚİ\šœÛÛ‰Ë	Ø\XØ][Û‹ÚœÛÛ‰Ê_XØ]Ú
+J^İØ\İ
+K›Y\ÜØYÙJ__X\Ş[˜È[˜İ[Ûˆ^ÜÜİŠ
+^Û]›İÜÏVÖÉÓ[X™\‰Ë	Ñ]IË	ĞÛY[	Ë	Ôİ]\ÉË	ÔİXİ[	Ë	Ñ\ØÛİ[	Ë	Õİ[	Ë	Ğİ\œ™[˜ŞI×K‹‹œİ]Kœ][İ\Ë›X\
+OO–ÜK›[X™\‹K˜Ü™X]YØ]K˜ÛY[Û˜[YKKœİ]\ËKœİXİ[K™\ØÛİ[Kİ[K˜İ\œ™[˜ŞWJWNÙİÛ›ØY
+›İÜË›X\
+Oœ‹›X\
+O‰È‰ÊÔİš[™ÊÏÉÉÊKœ™\XÙP[
+	È‰Ë	Èˆ‰ÊJÉÈ‰ÊKš›Ú[Š	Ë	ÊJKš›Ú[Š	×—‰ÊK	Ü][İ][ÛœË˜Üİ‰Ë	İ^ØÜİ‰Ê_Y[˜İ[Ûˆ^ÜØ[\ĞÜİŠØ[\Ë˜[YJ^Û]›İÜÏVÖÉÔØ[IË	Ñ]IË	ĞÛY[	Ë	Ô][İ][Û‰Ë	Ô™]š\Ú[Û‰Ë	Ôİ]\ÉË	Õİ[	Ë	Ô™XÙZ]™Y	Ë	Ğ˜[[˜ÙIË	Ğİ\œ™[˜ŞI×K‹‹œØ[\Ë›X\
+ÏO–ÜË›[X™\‹ËœÛÛØ]Ë˜ÛY[Û˜[YKËœ][İ][Û—Û[X™\‹Ëœ™]š\Ú[Û‹Ëœ^[Y[Üİ]\ËËİ[Ë˜[[İ[ÜZY[X™\ŠËİ[
+KS[X™\ŠË˜[[İ[ÜZY
+KË˜İ\œ™[˜ŞWJWNÙİÛ›ØY
+›İÜË›X\
+Oœ‹›X\
+O‰È‰ÊÔİš[™ÊÏÉÉÊKœ™\XÙP[
+	È‰Ë	Èˆ‰ÊJÉÈ‰ÊKš›Ú[Š	Ë	ÊJKš›Ú[Š	×—‰ÊK˜[YK	İ^ØÜİ‰Ê_Y[˜İ[Ûˆ^Ü™\ÜÜİŠ
+^Û]Üİ\[™O\™\Ü˜[™ÙJ
+NÙ^ÜØ[\ĞÜİŠš[\™Y™\ÜØ[\Ê
+KØ[\Ë\™\ÜIÜİ\K]ËIÙ[™K˜Üİ˜
+_CB™[˜İ[Ûˆ™]Õ\Ù\“[Ù[
+
+^Û[Ù[
+	ĞÜ™X]H\Ù\‰Ë]ˆÛ\ÜÏH™›Ü›KYÜšY]ˆÛ\ÜÏH™šY[X™[“˜[YOÛX™[[œ]Û\ÜÏHš[œ]ˆYHS˜[YHÙ]]ˆÛ\ÜÏH™šY[X™[‘[XZ[ÛX™[[œ]Û\ÜÏHš[œ]ˆYHQ[XZ[ˆ\OH™[XZ[Ù]]ˆÛ\ÜÏH™šY[X™[”›ÛOÛX™[Ù[XİÛ\ÜÏHš[œ]ˆYHT›ÛH‰ÖÉÑ\İ[X]Ü‰Ë	ÔØ[\ÉË	ÕšY]Ù\‰Ë	ĞYZ[š\İ˜]Ü‰×K›X\
+O˜Ü[Û‰ŞOÛÜ[Û˜
+Kš›Ú[Š	ÉÊ_OÜÙ[XİÙ]]ˆÛ\ÜÏH™šY[X™[•[\Ü˜\H\ÜİÛÜ™
+LŠÈÚ\˜Xİ\œÊOÛX™[[œ]Û\ÜÏHš[œ]ˆYHT\ÜİÛÜ™ˆ\OHœ\ÜİÛÜ™Ù]Ù]˜	ØØ[˜Ù[O]ÛˆÛ\ÜÏH˜ˆš[X\Hˆ]KXXİ[ÛH˜Ü™X]K]\Ù\ˆÜ™X]HXØÛİ[Ø]Û˜
+_CB›]Y™\œ™Y[œİ[›Û\[[ØÛÛœİ[œİ[]ÛI
+	ÈÚ[œİ[\	ÊNÚYŠ
+	ÜÙ\šXÙUÛÜšÙ\‰Ú[ˆ˜]šYØ]ÜŠI‰›ØØ][Û‹œ›İØÛÛOOIÙš[N‰Ê]Ú[™İË˜Y]™[\İ[™\Š	ÛØY	Ë
+
+OO›˜]šYØ]Ü‹œÙ\šXÙUÛÜšÙ\‹œ™YÚ\İ\Š	ËÜÙ\šXÙK]ÛÜšÙ\‹šœÉÊK˜Ø]Ú
+
+
+OOßJJNÚYŠÚ[™İË›X]ÚYYXOËŠ	Ê\Ü^K[[ÙNˆİ[™[Û™JIÊK›X]Ú\ß˜]šYØ]Ü‹œİ[™[Û™JZ[œİ[]Û‹šY[]YNİÚ[™İË˜Y]™[\İ[™\Š	Ø™Y›Ü™Z[œİ[›Û\	ËOOÙKœ™]™[Y˜][
+
+NÙY™\œ™Y[œİ[›Û\YNÚ[œİ[]Û‹šY[Y˜[Ù_JNİÚ[™İË˜Y]™[\İ[™\Š	Ø\[œİ[Y	Ë
+
+OOÚ[œİ[]Û‹šY[]YNÙY™\œ™Y[œİ[›Û\[[İØ\İ
+	Ñœ˜[YQ›İÈ[œİ[Y	Ê_JNÙ[˜İ[Ûˆ[œİ[[
+
+^Û][ÜÏKÚ\Û™_\Y\ÙÚK\İ
+˜]šYØ]Ü‹\Ù\YÙ[
+KÙXİ\™O]Ú[™İËš\ÔÙXİ\™PÛÛ^ÚYŠ\ÙXİ\™J\™]\›ˆ[Ù[
+	Ò[œİ[œ˜[YQ›İÉË	Ï‘›Üˆ[Øš[H[œİ[][Û‹Ü[ˆH\ŞYYÈ\[šÈÛˆ[İ\ˆÛ™KÜ‰ËØ[˜Ù[
+NÛ]Y\ÜØYÙOZ[ÜÏÉÏ’[ˆØY˜\šK\”Ú\™OØ‹[ˆÚÛÜÙHYÈÛYHØÜ™Y[Ø‹Ü‰Î‰Ï“Ü[ˆ[İ\ˆœ›İÜÙ\ˆY[H[™ÚÛÜÙH’[œİ[\ØˆÜˆYÈÛYHØÜ™Y[Ø‹Ü‰ÎÛ[Ù[
+	Ò[œİ[œ˜[YQ›İÉË	ÛY\ÜØYÙ_O•H[œİ[Y\™YYÈ[ˆ[\›™]ÛÛ›™Xİ[ÛˆÈØY[İ\ˆ]™H\Ú[™\ÜÈ™XÛÜ™ËÜ˜Ø[˜Ù[
+_X\Ş[˜È[˜İ[Ûˆ[œİ[ØJ
+^ÚYŠYY™\œ™Y[œİ[›Û\
+\™]\›ˆ[œİ[[
+
+NÙY™\œ™Y[œİ[›Û\œ›Û\
+
+NÛ]ÚÚXÙOX]ØZ]Y™\œ™Y[œİ[›Û\\Ù\ÚÚXÙNÙY™\œ™Y[œİ[›Û\[[ÚYŠÚÚXÙOË›İ]ÛÛYOOOIØXØÙ\Y	Ê^Ú[œİ[]Û‹šY[]YNİØ\İ
+	Ñœ˜[YQ›İÈYYÈ[İ\ˆ]šXÙIÊ_Y[ÙHØ\İ
+	Ò[œİ[][ÛˆØ\ÈØ[˜Ù[Y	Ê_CB™Øİ[Y[˜Y]™[\İ[™\Š	ÚÙ^YİÛ‰ËOOÚYŠKšÙ^OOOIÑ\ØØ\IÉ‰‰
+	ÈÛ[Ù[›Ûİ	ÊKš[›™\’S
+^ØÛÜÙS[Ù[
+
+NÜ™]\›ŸZYŠK˜[Ù^I‰™KšÙ^KÓİÙ\Ø\ÙJ
+OOOIÛ‰É‰œİ]K\Ù\‰‰œİ]K\Ù\‹œ›ÛHOOIÕšY]Ù\‰É‰ˆYØİ[Y[œ]Y\TÙ[XİÜŠ	Ë›[Ù[X™ÉÊJ^ÙKœ™]™[Y˜][
+
+NÜ][İS[Ù[
+
+NÜ™]\›ŸZYŠKšÙ^OOOIËÉÉ‰ˆYK˜İ›Ù^I‰ˆYK›Y]RÙ^I‰ˆYK˜[Ù^I‰ˆVÉÒS”U	Ë	ÕVT‘PIË	ÔÑSPÕ	×Kš[˜ÛY\ÊØİ[Y[˜Xİ]™Q[[Y[YÓ˜[YJI‰ˆYØİ[Y[œ]Y\TÙ[XİÜŠ	Ë›[Ù[X™ÉÊJ^Û]ÙX\˜ÚI
+	ÈÜÙX\˜Ú	ÊNÚYŠÙX\˜Ú
+^ÙKœ™]™[Y˜][
+
+NÜÙX\˜Ú™›Øİ\Ê
+___JNÃB™Øİ[Y[˜Y]™[\İ[™\Š	Ú[œ]	ËOOÚYŠK\™Ù]šYOOIÜÙX\˜Ú	Ê^Üİ]KœÙX\˜ÚYK\™Ù]˜[YNÜ™[™\Š
+_HJNÙØİ[Y[˜Y]™[\İ[™\Š	ØÚ[™ÙIËOOÚYŠK\™Ù]šYOOIÜİ]\Ñš[\‰Ê^Üİ]K™š[\YK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ][İTÛÜ	Ê^Üİ]Kœ][İTÛÜYK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ™\Ü\š[Ù	Ê^Üİ]Kœ™\Ü\š[ÙYK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ™\ÜÛY[	Ê^Üİ]Kœ™\ÜÛY[YK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ™\Ü^[Y[	Ê^Üİ]Kœ™\Ü^[Y[YK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ™\ÜÛİ\˜ÙIÊ^Üİ]Kœ™\ÜÛİ\˜ÙOYK\™Ù]˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜ™\Üİ\	ßK\™Ù]šYOOIÜ™\Ü[™	Ê^Üİ]Kœ™\Ü\š[ÙIØİ\İÛIÎÜİ]Kœ™\Üİ\I
+	ÈÜ™\Üİ\	ÊK˜[YNÜİ]Kœ™\Ü[™I
+	ÈÜ™\Ü[™	ÊK˜[YNÜ™[™\Š
+_ZYŠK\™Ù]šYOOIÜØ[\Ñš[\‰Ê^Üİ]KœØ[\Ñš[\YK\™Ù]˜[YNÜ™[™\Š
+__JNÙØİ[Y[˜Y]™[\İ[™\Š	ØÛXÚÉË\Ş[˜ÈOOÛ]ÛÏYK\™Ù]˜ÛÜÙ\İ
+	ÖÙ]KYÛİ×IÊNÚYŠÛÊ\™]\›ˆ˜]ŠÛË™]\Ù]™ÛİÊNÛ]][İQš[\YK\™Ù]˜ÛÜÙ\İ
+	ÖÙ]K\][İKYš[\—IÊNÚYŠ][İQš[\Š^Üİ]K™š[\\][İQš[\‹™]\Ù]œ][İQš[\Ü™[™\Š
+NÜ™]\›Ÿ[]YK\™Ù]˜ÛÜÙ\İ
+	ÖÙ]KXXİ[Û—IÊNÚYŠXŠ\™]\›Û]OX‹™]\Ù]˜Xİ[Û‹YX‹™]\Ù]šYİ^ÚYŠOOOIÙÛİË\™\ÜÉÊ[˜]Š	Ü™\ÜÉÊNÚYŠOOOIÙÛİË\Ø[\ÉÊ[˜]Š	ÜØ[\ÉÊNÚYŠOOOIİšY]Ë\Ø[K\][İIÊ\ÚİÔ][İJİ]Kœ][İ\Ë™š[™
+OOœKšYOOZY
+JNÚYŠOOOIÜ™XÛÜ™\^[Y[	Ê^Û]Ø[O\İ]KœØ[\Ë™š[™
+OšYOOZY
+NÚYŠØ[J\^[Y[[Ù[
+Ø[J_ZYŠOOOIİšY]Ë\Ø[IÊ^Û]Ø[O\İ]KœØ[\Ë™š[™
+OšYOOZY
+NÚYŠØ[J\ÚİÔØ[JØ[J_ZYŠOOOIÛ™]ËY\™Xİ\Ø[IÊY\™XİØ[S[Ù[
+
+NÚYŠOOOIÚ[œİ[X\	ÊX]ØZ][œİ[ØJ
+NÚYŠOOOIØÛÛ™\\Ø[IÊX]ØZ]ÛÛ™\Ø[JY
+NÚYŠOOOIÛ™]ËXÛY[	ÊXÛY[[Ù[
+
+NÚYŠOOOIÙY]XÛY[	ÊXÛY[[Ù[
+İ]K˜ÛY[Ë™š[™
+OšYOOZY
+JNÚYŠOOOIÙ[]KXÛY[	Ê^ÚYŠÛÛ™š\›J	Ğ\˜Ú]™H\ÈÛY[ÉÊJ^Ø]ØZ]\J	ËØ\KØÛY[ÏÚYIÊÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+KÛY]Ù‰ÑSUIßJNØ]ØZ]ØY[
+
+NİØ\İ
+	ĞÛY[\˜Ú]™Y	Ê__ZYŠOOOIÚ[\Ü\›ÙXİÉÊZ[\Ü›ÙXİÊ
+NÚYŠOOOIÛ™]Ë\›ÙXİ	Ê\›ÙXİ[Ù[
+
+NÚYŠOOOIÙY]\›ÙXİ	Ê\›ÙXİ[Ù[
+İ]Kœ›ÙXİË™š[™
+OšYOOZY
+JNÚYŠOOOIÙ[]K\›ÙXİ	Ê^ÚYŠÛÛ™š\›J	Ğ\˜Ú]™H\È›ÙXİœ›ÛH™]È][İ][ÛœÏÉÊJ^Ø]ØZ]\J	ËØ\KÜ›ÙXİÏÚYIÊÙ[˜ÛÙUT’PÛÛ\Û™[
+Y
+KÛY]Ù‰ÑSUIßJNØ]ØZ]ØY[
+
+NİØ\İ
+	Ô›ÙXİ\˜Ú]™Y	Ê__ZYŠOOOIÛ™]Ë\][İIÊ\][İS[Ù[
+
+NÚYŠOOOIİšY]Ë\][İIÊ\ÚİÔ][İJİ]Kœ][İ\Ë™š[™
+OšYOOZY
+JNÚYŠOOOIÙY]\][İIÊ^Û]O\İ]Kœ][İ\Ë™š[™
+OšYOOZY
+NÚYŠJ\][İS[Ù[
+J_ZYŠOOOIÚ\ÜİYIÊX]ØZ]\ÜİYJY
+NÚYŠOOOIØ\›İ™Y	ÊX]ØZ]Ù]İ]\ÊY	Ğ\›İ™Y	ÊNÚYŠOOOIÜ™Z™XİY	ÊX]ØZ]Ù]İ]\ÊY	Ô™Z™XİY	ÊNÚYŠOOOIÜ™]š\Ú[Û‰ÊX]ØZ]™]š\ÙJY
+NÚYŠOOOIÜ‰Ê\š[][İJİ]Kœ][İ\Ë™š[™
+OšYOOZY
+JNÚYŠOOOIØ˜XÚİ\	ÊX]ØZ]˜XÚİ\
+
+NÚYŠOOOIÙ^Ü	ÊY^ÜÜİŠ
+NÚYŠOOOIÙ^Ü\Ø[\ÉÊY^ÜØ[\ĞÜİŠš\ÚX›TØ[\Ê
+K	ÜØ[\Ë\™YÚ\İ\‹˜Üİ‰ÊNÚYŠOOOIÙ^Ü\™\Ü	ÊY^Ü™\ÜÜİŠ
+NÚYŠOOOIÜØ]™K\Ù][™ÜÉÊ^Û]^ØÛÛ\[N‰
+	ÈÜÙ]ÛÛ\[IÊK˜[YKš[J
+KÛ™N‰
+	ÈÜÙ]Û™IÊK˜[YKš[J
+Kİ\œ™[˜ŞN‰
+	ÈÜÙ]İ\œ™[˜ŞIÊK˜[YKš[J
+KÕ\\Ø\ÙJ
+K\›\Î‰
+	ÈÜÙ]\›\ÉÊK˜[YKš[J
+_NØ]ØZ]\J	ËØ\KÜÙ][™ÜÉËÛY]Ù‰ÔUÒ	Ë›ÙN’”ÓÓ‹œİš[™ÚYJ
+_JNØ]ØZ]ØY[
+
+NİØ\İ
+	ÔÙ][™ÜÈØ]™Y	Ê_ZYŠOOOIÛÙÛİ]	Ê^Ø]ØZ]\J	ËØ\KØ]]ÛÙÛİ]	ËÛY]Ù‰ÔÔÕ	Ë›ÙN‰ŞßIßJNÜİ]K\Ù\[[ÜÚİÓÙÚ[Š
+_ZYŠOOOIÛ™]Ë]\Ù\‰Ê[™]Õ\Ù\“[Ù[
+
+NÚYŠOOOIØÜ™X]K]\Ù\‰Ê^Û]^Û˜[YN‰
+	ÈİS˜[YIÊK˜[YK[XZ[‰
+	ÈİQ[XZ[	ÊK˜[YK\ÜİÛÜ™‰
+	ÈİT\ÜİÛÜ™	ÊK˜[YK›ÛN‰
+	ÈİT›ÛIÊK˜[Y_NØ]ØZ]\J	ËØ\Kİ\Ù\œÉËÛY]Ù‰ÔÔÕ	Ë›ÙN’”ÓÓ‹œİš[™ÚYJ
+_JNØÛÜÙS[Ù[
+
+NØ]ØZ]ØY[
+
+NİØ\İ
+	Õ\Ù\ˆÜ™X]Y	Ê_ZYŠOOOIÜØ]™K]\Ù\‰Ê^Û]›ÛOI
+Ü›ÛKIÚYX
+K˜[YKXİ]™OI
+ØXİ]™KIÚYX
+K˜[YOOOIİYIÎØ]ØZ]\J	ËØ\Kİ\Ù\œÉËÛY]Ù‰ÔUÒ	Ë›ÙN’”ÓÓ‹œİš[™ÚYJÚY›ÛKXİ]™_J_JNØ]ØZ]ØY[
+
+NİØ\İ
+	Ô\›Z\ÜÚ[ÛœÈ\]Y	Ê__XØ]Ú
+\œŠ^İØ\İ
+\œ‹›Y\ÜØYÙJ__JNØ›Ûİ
+
+NÃBƒBƒBƒB
