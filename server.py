@@ -140,6 +140,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json(200,{'user':user})
                 self.require(user)
                 if p=='/api/clients': return self.clients(c,user)
+                if p=='/api/products/import' and self.command=='POST': return self.import_products(c,user)
                 if p=='/api/products': return self.products(c,user)
                 if p=='/api/quotations': return self.quotes(c,user)
                 if p.startswith('/api/quotations/'):
@@ -225,6 +226,30 @@ class Handler(BaseHTTPRequestHandler):
             if c.execute('SELECT 1 FROM quotations WHERE client_id=?',(x,)).fetchone(): c.execute('UPDATE clients SET archived=1,updated_at=? WHERE id=?',(now(),x));action='client_archived'
             else:c.execute('DELETE FROM clients WHERE id=?',(x,));action='client_deleted'
             self.audit(c,u,action,'client',x);return self.send_json(200,{'ok':True})
+    def import_products(self,c,u):
+        self.require(u,('Administrator',))
+        d=self.body(); items=d.get('products')
+        if not isinstance(items,list) or not items or len(items)>5000: raise ValueError('Provide between 1 and 5000 catalog products')
+        prepared=[]; seen=set()
+        for item in items:
+            if not isinstance(item,dict): raise ValueError('Each catalog item must be an object')
+            code=str(item.get('code','')).strip(); name=str(item.get('name','')).strip()
+            category=str(item.get('category','Other')).strip() or 'Other'; unit=str(item.get('unit','')).strip()
+            if not code or len(code)>40 or not name or len(name)>120 or len(category)>80 or not unit or len(unit)>30:
+                raise ValueError('Each product needs a code, name, category, and unit within supported lengths')
+            key=code.casefold()
+            if key in seen: raise ValueError(f'Duplicate product code in import: {code}')
+            seen.add(key); prepared.append((code,name,category,unit,str(money(item.get('rate')))))
+        t=now(); added=0
+        for code,name,category,unit,rate in prepared:
+            product_id=uid()
+            cur=c.execute('INSERT OR IGNORE INTO products(id,code,name,category,unit,rate,active,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)',(product_id,code,name,category,unit,rate,t,t))
+            if cur.rowcount:
+                added+=1
+                c.execute('INSERT INTO rate_history VALUES(?,?,?,?,?,?,?)',(uid(),product_id,rate,self.setting(c,'currency'),unit,t,u['id']))
+        skipped=len(prepared)-added
+        self.audit(c,u,'catalog_imported','product_catalog','pl-03-04-26',{'submitted':len(prepared),'added':added,'skipped_existing':skipped})
+        return self.send_json(200,{'submitted':len(prepared),'added':added,'skipped':skipped})
     def products(self,c,u):
         if self.command=='GET': return self.send_json(200,[dict(x) for x in c.execute('SELECT * FROM products WHERE active=1 ORDER BY category,name')])
         self.require(u,('Administrator',));d=self.body()
